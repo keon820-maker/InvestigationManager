@@ -80,7 +80,6 @@ object TableCellDetector {
                 if (!duplicate) deduped += r
             }
 
-            // 큰 외곽 행/표 사각형은 제거하고 실제 셀 위주로 남긴다.
             val leaf = deduped.filter { outer ->
                 deduped.none { inner ->
                     inner !== outer &&
@@ -125,10 +124,18 @@ object TableCellDetector {
                 Size(max(1.0, crop.width * scale), targetHeight.toDouble()),
                 0.0, 0.0, Imgproc.INTER_CUBIC
             )
-            Imgproc.copyMakeBorder(resized, resized, 24, 24, 24, 24, Core.BORDER_CONSTANT, org.opencv.core.Scalar(255.0))
-            val out = Bitmap.createBitmap(resized.cols(), resized.rows(), Bitmap.Config.ARGB_8888)
-            Utils.matToBitmap(resized, out)
+
+            val bordered = Mat()
+            Core.copyMakeBorder(
+                resized, bordered,
+                24, 24, 24, 24,
+                Core.BORDER_CONSTANT,
+                org.opencv.core.Scalar(255.0)
+            )
+            val out = Bitmap.createBitmap(bordered.cols(), bordered.rows(), Bitmap.Config.ARGB_8888)
+            Utils.matToBitmap(bordered, out)
             resized.release()
+            bordered.release()
             crop.recycle()
             return out
         } finally {
