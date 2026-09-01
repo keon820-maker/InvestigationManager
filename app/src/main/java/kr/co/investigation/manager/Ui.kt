@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package kr.co.investigation.manager
 
 import android.content.Context
@@ -25,6 +27,7 @@ import kr.co.investigation.manager.pdf.RequestPdf
 import kr.co.investigation.manager.storage.OriginalFileStore
 import java.io.File
 import java.time.LocalDate
+
 
 @Composable fun InvestigationApp(vm:AppViewModel){
     var screen by remember{mutableStateOf("main")}; var edit by remember{mutableStateOf<InvestigationCase?>(null)}
@@ -71,7 +74,7 @@ fun js(s:String)="`"+s.replace("`","\\`")+"`"
 }
 
 @Composable fun EditFields(c:InvestigationCase,on:(InvestigationCase)->Unit){
-    fun f(label:String,v:String,set:(String)->InvestigationCase){OutlinedTextField(v,{on(set(it))},label={Text(label)},modifier=Modifier.fillMaxWidth().padding(vertical=3.dp))}
+    @Composable fun f(label:String,v:String,set:(String)->InvestigationCase){OutlinedTextField(v,{on(set(it))},label={Text(label)},modifier=Modifier.fillMaxWidth().padding(vertical=3.dp))}
     f("관리번호",c.managementNo){c.copy(managementNo=it)};f("의뢰일",c.requestDate){c.copy(requestDate=it)};f("조사담당자",c.investigator){c.copy(investigator=it)};f("채무자명",c.debtorName){c.copy(debtorName=it)};f("전화번호",c.phone){c.copy(phone=it)};f("핸드폰번호",c.mobile){c.copy(mobile=it)};f("완료요청일",c.dueDate){c.copy(dueDate=it)};f("조사구분",c.investigationType){c.copy(investigationType=it)};f("대출종류",c.loanType){c.copy(loanType=it)};f("물건종류",c.propertyType){c.copy(propertyType=it)};f("물건소재지 (지도 기준)",c.propertyAddress){c.copy(propertyAddress=it)};f("물건소유자",c.ownerName){c.copy(ownerName=it)};f("소유자 주소",c.ownerAddress){c.copy(ownerAddress=it)};f("기타요청사항",c.requestNotes){c.copy(requestNotes=it)};f("영업점",c.branch){c.copy(branch=it)};f("조사의뢰자",c.requester){c.copy(requester=it)}
 }
 
