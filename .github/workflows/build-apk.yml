@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - feature/ocr-perspective-delete-v02
 
 jobs:
   build:
