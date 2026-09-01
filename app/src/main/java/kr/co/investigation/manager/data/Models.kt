@@ -38,7 +38,7 @@ data class InvestigationCase(
 data class Attachment(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val caseId: Long,
-    val type: String, // ORIGINAL_REQUEST / CONFIRMATION
+    val type: String,
     val originalName: String,
     val localPath: String,
     val mimeType: String,
@@ -65,8 +65,10 @@ interface CaseDao {
 interface AttachmentDao {
     @Query("SELECT * FROM attachments WHERE caseId=:caseId ORDER BY createdAt") fun observe(caseId:Long):Flow<List<Attachment>>
     @Query("SELECT * FROM attachments WHERE caseId IN (:caseIds)") suspend fun getForCases(caseIds:List<Long>):List<Attachment>
+    @Query("SELECT * FROM attachments WHERE caseId=:caseId") suspend fun getForCase(caseId:Long):List<Attachment>
     @Insert suspend fun insert(value:Attachment):Long
     @Query("DELETE FROM attachments WHERE caseId IN (:caseIds)") suspend fun deleteForCases(caseIds:List<Long>)
+    @Query("DELETE FROM attachments WHERE caseId=:caseId") suspend fun deleteForCase(caseId:Long)
 }
 
 @Database(entities=[InvestigationCase::class, Attachment::class], version=1, exportSchema=false)
