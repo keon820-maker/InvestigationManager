@@ -105,6 +105,7 @@ fun js(s:String)="`"+s.replace("`","\\`")+"`"
     val ctx=LocalContext.current
     val scope=rememberCoroutineScope()
     var raw by remember{mutableStateOf("")}
+    var showRaw by remember{mutableStateOf(false)}
     var parsed by remember{mutableStateOf(InvestigationCase(year=LocalDate.now().year))}
     var busy by remember{mutableStateOf(false)}
     var source by remember{mutableStateOf<Uri?>(null)}
@@ -113,6 +114,9 @@ fun js(s:String)="`"+s.replace("`","\\`")+"`"
         if(u!=null){
             source=u
             busy=true
+            showRaw=false
+            raw=""
+            preprocess="문서 분석 중..."
             scope.launch{
                 runCatching{OcrService.recognizeCase(ctx,u)}
                     .onSuccess{r->raw=r.rawText;parsed=r.parsed;preprocess=r.preprocessMessage}
@@ -126,6 +130,10 @@ fun js(s:String)="`"+s.replace("`","\\`")+"`"
             Button(onClick={picker.launch("image/*")}){Text("조사의뢰서 사진 선택")}
             if(busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             if(preprocess.isNotBlank()) Text(preprocess,style=MaterialTheme.typography.bodySmall,modifier=Modifier.padding(vertical=8.dp))
+            if(source!=null&&!busy){
+                Text("자동인식 결과",style=MaterialTheme.typography.titleMedium)
+                Text("아래 항목을 확인·수정한 뒤 저장하세요. OCR 원문은 기본적으로 숨깁니다.",style=MaterialTheme.typography.bodySmall)
+            }
             Spacer(Modifier.height(12.dp))
             EditFields(parsed){parsed=it}
             Spacer(Modifier.height(12.dp))
@@ -139,10 +147,12 @@ fun js(s:String)="`"+s.replace("`","\\`")+"`"
                     onDone()
                 }}){Text("검수 완료 및 저장")}
                 Spacer(Modifier.width(8.dp))
-                OutlinedButton(onClick={raw=if(raw.isBlank())"OCR 원문 없음" else raw}){Text("OCR 원문 확인")}
+                OutlinedButton(enabled=raw.isNotBlank(),onClick={showRaw=!showRaw}){Text(if(showRaw)"OCR 원문 숨기기" else "OCR 원문 보기")}
             }
-            if(raw.isNotBlank()){
+            if(showRaw&&raw.isNotBlank()){
                 Spacer(Modifier.height(10.dp))
+                HorizontalDivider()
+                Text("OCR 원문(진단용)",style=MaterialTheme.typography.titleSmall,modifier=Modifier.padding(top=10.dp))
                 Text(raw,style=MaterialTheme.typography.bodySmall)
             }
         }

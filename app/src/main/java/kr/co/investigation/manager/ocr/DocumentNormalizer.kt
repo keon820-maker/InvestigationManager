@@ -30,8 +30,9 @@ object DocumentNormalizer {
         val message: String
     )
 
-    private const val A4_WIDTH = 1654
-    private const val A4_HEIGHT = 2339
+    // OCR용 이미지는 A4 300dpi 상당으로 정규화한다. 원본 증거파일은 변경하지 않는다.
+    private const val A4_WIDTH = 2480
+    private const val A4_HEIGHT = 3508
 
     suspend fun normalize(context: Context, uri: Uri): Result = withContext(Dispatchers.Default) {
         val srcBitmap = loadBitmap(context, uri)
@@ -39,7 +40,7 @@ object DocumentNormalizer {
             return@withContext Result(srcBitmap, false, "OpenCV 초기화 실패 - 보정 없이 OCR")
         }
 
-        val working = downscaleForDetection(srcBitmap, 2200)
+        val working = downscaleForDetection(srcBitmap, 3000)
         val rgba = Mat()
         Utils.bitmapToMat(working, rgba)
 
@@ -103,14 +104,14 @@ object DocumentNormalizer {
         val out = Bitmap.createBitmap(A4_WIDTH, A4_HEIGHT, Bitmap.Config.ARGB_8888)
         Utils.matToBitmap(warped, out)
         releaseAll(gray, enhanced, edges, kernel, hierarchy, rgba, src, dst, transform, warped)
-        Result(out, true, "문서 외곽/원근 보정 완료")
+        Result(out, true, "문서 외곽/원근 보정 완료 (A4 300dpi OCR용)")
     }
 
     private fun loadBitmap(context: Context, uri: Uri): Bitmap {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         context.contentResolver.openInputStream(uri).use { BitmapFactory.decodeStream(it, null, bounds) }
         var sample = 1
-        val maxDecodeSide = 3200
+        val maxDecodeSide = 4200
         while (max(bounds.outWidth, bounds.outHeight) / sample > maxDecodeSide) sample *= 2
         val opts = BitmapFactory.Options().apply {
             inSampleSize = sample.coerceAtLeast(1)

@@ -8,6 +8,7 @@ on:
       - feature/ocr-perspective-delete-v02
       - feature/ocr-anchor-v03
       - feature/ocr-spatial-v04
+      - feature/ocr-tablecells-v05
 
 jobs:
   build:
@@ -36,3 +37,5 @@ jobs:
         with:
           name: InvestigationManager-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+
+# v0.5 table-cell OCR retry
