@@ -37,3 +37,5 @@ jobs:
         with:
           name: InvestigationManager-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+
+# v0.5 table-cell OCR retry
