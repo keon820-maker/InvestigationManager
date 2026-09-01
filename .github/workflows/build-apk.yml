@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - feature/ocr-perspective-delete-v02
+      - feature/ocr-anchor-v03
 
 jobs:
   build:
