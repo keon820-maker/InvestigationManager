@@ -7,6 +7,7 @@ on:
       - main
       - feature/ocr-perspective-delete-v02
       - feature/ocr-anchor-v03
+      - feature/ocr-spatial-v04
 
 jobs:
   build:
