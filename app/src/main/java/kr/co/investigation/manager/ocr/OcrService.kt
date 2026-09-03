@@ -13,8 +13,10 @@ object OcrService {
         val preprocessMessage: String
     )
 
-    suspend fun recognizeCase(context: Context, uri: Uri): OcrResult =
-        AdaptiveOcr.recognizeCase(context, uri)
+    suspend fun recognizeCase(context: Context, uri: Uri): OcrResult {
+        val base = AdaptiveOcr.recognizeCase(context, uri)
+        return FooterOcrRepair.repair(context, uri, base)
+    }
 
     suspend fun recognize(context: Context, uri: Uri): String =
         recognizeCase(context, uri).rawText
