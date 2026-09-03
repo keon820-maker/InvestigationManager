@@ -16,7 +16,8 @@ object OcrService {
     suspend fun recognizeCase(context: Context, uri: Uri): OcrResult {
         val base = AdaptiveOcr.recognizeCase(context, uri)
         val footer = FooterOcrRepair.repair(context, uri, base)
-        return CommonResultRepair.repair(footer)
+        val notes = NotesOcrRepair.repair(context, uri, footer)
+        return CommonResultRepair.repair(notes)
     }
 
     suspend fun recognize(context: Context, uri: Uri): String =
