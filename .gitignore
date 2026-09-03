@@ -1,0 +1,31 @@
+# Android / Gradle
+.gradle/
+**/build/
+local.properties
+.idea/
+*.iml
+
+# Signing / credentials
+*.jks
+*.keystore
+*.p12
+*.pfx
+keystore.properties
+
+# Build artifacts
+*.apk
+*.aab
+
+# Local investigation data / evidence exports
+*.db
+*.db-shm
+*.db-wal
+/archives/
+/exports/
+/captures/
+/test-documents/
+InvestigationManager_*.zip
+
+# OS files
+.DS_Store
+Thumbs.db
