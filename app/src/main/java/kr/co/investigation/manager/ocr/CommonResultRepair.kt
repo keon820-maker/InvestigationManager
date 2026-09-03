@@ -38,6 +38,7 @@ object CommonResultRepair {
         // 지도 검색 시에는 GeocoderService가 그 앞자리 숫자만 제외해서 사용한다.
         val propertyAddress = preferPostalAddress(c.propertyAddress, propertyAddressFromRaw)
         val ownerAddress = preferPostalAddress(c.ownerAddress, ownerAddressFromRaw)
+        val investigationType = normalizeInvestigationType(c.investigationType)
         val notes = cleanNotes(c.requestNotes)
 
         val fixed = c.copy(
@@ -46,6 +47,7 @@ object CommonResultRepair {
             propertyType = propertyType,
             propertyAddress = propertyAddress,
             ownerAddress = ownerAddress,
+            investigationType = investigationType,
             requestNotes = notes
         )
 
@@ -53,14 +55,16 @@ object CommonResultRepair {
         return base.copy(
             parsed = fixed,
             rawText = base.rawText + buildString {
-                append("\n\n--- 최종 구조 보정 v0.17 ---\n")
+                append("\n\n--- 최종 구조 보정 v0.18 ---\n")
+                append("조사구분 확정 : ").append(fixed.investigationType).append('\n')
                 append("물건종류 확정 : ").append(fixed.propertyType).append('\n')
                 append("물건소재지 확정 : ").append(fixed.propertyAddress).append('\n')
                 append("소유자주소 확정 : ").append(fixed.ownerAddress).append('\n')
+                append("기타요청사항 확정 : ").append(fixed.requestNotes.replace('\n', ' ')).append('\n')
                 append("영업점 확정 : ").append(fixed.branch).append('\n')
                 append("조사의뢰자 확정 : ").append(fixed.requester).append('\n')
             },
-            preprocessMessage = base.preprocessMessage + " / 최종 구조 보정 v0.17"
+            preprocessMessage = base.preprocessMessage + " / 최종 구조 보정 v0.18"
         )
     }
 
@@ -87,14 +91,12 @@ object CommonResultRepair {
     }
 
     private fun extractPropertyType(raw: String): String {
-        // 진단 문자열에 "물건종류 : 물건종류"가 먼저 등장할 수 있으므로 모든 후보를 검사한다.
         val labelRegex = Regex("물\\s*건\\s*종\\s*류\\s*[:：|]?\\s*([^\\n|]{1,30})")
         val labeled = labelRegex.findAll(raw)
             .map { cleanSimpleValue(it.groupValues[1]) }
             .firstOrNull(::validPropertyType)
         if (!labeled.isNullOrBlank()) return labeled
 
-        // 표 OCR에서 라벨과 값이 서로 다른 line으로 분리된 경우를 위한 보조 후보.
         val known = listOf(
             "아파트", "오피스텔", "연립주택", "다세대주택", "다가구주택", "단독주택",
             "주택", "빌라", "상가", "근린생활시설", "토지", "공장", "사무실"
@@ -107,14 +109,12 @@ object CommonResultRepair {
 
     private fun extractAddress(raw: String, label: String): String {
         val spaced = label.map { Regex.escape(it.toString()) }.joinToString("\\s*")
-        // 콜론이 없거나 라벨과 값이 줄바꿈으로 분리돼도 허용한다.
         val regex = Regex("$spaced\\s*[:：|]?\\s*([^\\n|]+)")
         val candidates = regex.findAll(raw)
             .map { cleanSimpleValue(it.groupValues[1]) }
             .filter(::looksLikeAddress)
             .toList()
 
-        // 문서 원문에 5~6자리 앞번호가 있으면 그것을 우선 보존한다.
         return candidates.firstOrNull { Regex("^\\d{5,6}\\s+").containsMatchIn(it) }
             ?: candidates.firstOrNull().orEmpty()
     }
@@ -128,17 +128,43 @@ object CommonResultRepair {
         return current
     }
 
+    private fun normalizeInvestigationType(value: String): String {
+        var s = value
+            .replace(Regex("\\s+"), "")
+            .replace("조시사", "조사")
+            .replace("조시", "조사")
+            .replace("열람조사사", "열람조사")
+            .replace("임대차조사사", "임대차조사")
+            .replace("＋", "+")
+            .trim('+', ' ', '|')
+
+        val hasView = s.contains("열람")
+        val hasLease = s.contains("임대차")
+        if (hasView && hasLease) return "열람조사+임대차조사"
+        if (hasView && (s.contains("조사") || s.length <= 8)) return "열람조사"
+        if (hasLease && (s.contains("조사") || s.length <= 10)) return "임대차조사"
+        return s
+    }
+
     private fun cleanNotes(value: String): String {
         var s = value.trim()
         s = s.replace(
             Regex("^[\\s.·ㆍ,;:：\\-]*기타\\s*요청\\s*사항\\s*[:：]?\\s*"),
             ""
         )
-        s = s.replace(Regex("(^|\\s)증금\\s*[:：]"), "$1보증금:")
-        s = s.replace(Regex("보증금\\s*[:：]\\s*0[IiLlOo]\\b"), "보증금:0")
-        s = s.replace(Regex("(^|\\s)임차료\\s*[:：]"), "$1월임차료:")
-        s = s.replace(Regex("월임차료\\s*[:：]\\s*[oO]\\b"), "월임차료:0")
-        return s.trim()
+
+        // 전용 요청사항 영역 뒤에 다른 표 셀(보증금/월임차료 등)이 OCR 순서 때문에 붙는 경우 제거한다.
+        s = s.replace(
+            Regex("\\s*(?:보증금|증금)\\s*[:：]?\\s*[^\\n]{0,20}?(?:월\\s*임차료|임차료)\\s*[:：]?\\s*[^\\n]{0,20}$"),
+            ""
+        )
+        s = s.replace(Regex("\\s*(?:보증금|증금)\\s*[:：]?\\s*[0Oo이Il|]?\\s*$"), "")
+        s = s.replace(Regex("\\s*(?:월\\s*임차료|임차료)\\s*[:：]?\\s*[0Oo이Il|]?\\s*$"), "")
+
+        s = s.replace(Regex("([.!?])(?=[가-힣])"), "$1 ")
+        s = s.replace(Regex("부탁드리며(?=채무자)"), "부탁드리며 ")
+        s = s.replace(Regex("\\s+"), " ").trim()
+        return s
     }
 
     private fun cleanSimpleValue(value: String): String = value
