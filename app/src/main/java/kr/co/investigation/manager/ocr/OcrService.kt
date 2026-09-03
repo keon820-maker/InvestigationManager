@@ -151,9 +151,9 @@ object OcrService {
 
     private fun documentLabelScore(text: String): Int {
         val c = compact(text)
-        return labels.sumOf { label ->
+        return labels.fold(0) { acc, label ->
             val l = compact(label)
-            when {
+            acc + when {
                 c.contains(l) -> 2
                 fuzzyContains(c, l) -> 1
                 else -> 0
