@@ -13,8 +13,8 @@ android {
         applicationId = "kr.co.investigation.manager"
         minSdk = 28
         targetSdk = 35
-        versionCode = 18
-        versionName = "0.18.0"
+        versionCode = 19
+        versionName = "0.19.0"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -44,4 +44,5 @@ dependencies {
     implementation("org.opencv:opencv:4.10.0")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("com.google.code.gson:gson:2.11.0")
+    implementation("org.osmdroid:osmdroid-android:6.1.20")
 }
