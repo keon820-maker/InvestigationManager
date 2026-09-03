@@ -46,16 +46,16 @@ import java.time.LocalDate
     val filtered=remember(cases,q){cases.filter{q.isBlank()|| listOf(it.managementNo,it.debtorName,it.propertyAddress,it.phone,it.mobile).any{s->s.contains(q,true)}}}
     Scaffold(topBar={TopAppBar(title={Text("조사관리")},actions={TextButton(onClick={vm.setYear(year-1)}){Text("‹")};Text("$year");TextButton(onClick={vm.setYear(year+1)}){Text("›")};TextButton(onClick=onSettings){Text("데이터")};Button(onClick=onNew){Text("+ 신규등록")}})}){pad->
         BoxWithConstraints(Modifier.padding(pad).fillMaxSize()){
-            val wide=maxWidth>=720.dp
+            val wide=maxWidth>=600.dp
             if(wide) Row(Modifier.fillMaxSize()){
-                CaseList(filtered,q,{q=it},onDetail,Modifier.weight(.42f))
-                MapPane(filtered,vm.selected.collectAsStateWithLifecycle().value,Modifier.weight(.58f))
+                CaseList(filtered,q,{q=it},onDetail,Modifier.weight(.44f))
+                NativeMapPane(filtered,vm.selected.collectAsStateWithLifecycle().value,Modifier.weight(.56f))
             } else Column(Modifier.fillMaxSize()){
                 TabRow(mobileTab){
                     Tab(mobileTab==0,{mobileTab=0},text={Text("목록")})
                     Tab(mobileTab==1,{mobileTab=1},text={Text("지도")})
                 }
-                if(mobileTab==0) CaseList(filtered,q,{q=it},onDetail,Modifier.fillMaxSize()) else MapPane(filtered,null,Modifier.fillMaxSize())
+                if(mobileTab==0) CaseList(filtered,q,{q=it},onDetail,Modifier.fillMaxSize()) else NativeMapPane(filtered,null,Modifier.fillMaxSize())
             }
         }
     }
