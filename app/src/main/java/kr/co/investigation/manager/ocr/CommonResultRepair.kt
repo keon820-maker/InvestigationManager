@@ -5,7 +5,7 @@ package kr.co.investigation.manager.ocr
  *
  * 고정 셀 OCR 결과와 하단 동적 OCR 결과를 모두 통과한 뒤 실행된다.
  * 이미지 내용을 임의로 추측해서 만들지 않고, rawText 안에 실제로 OCR된 후보가 있을 때만
- * 잘린 우편번호/조사의뢰자 등을 복구한다.
+ * 잘린 우편번호/조사의뢰자/물건종류 등을 복구한다.
  */
 object CommonResultRepair {
     fun repair(base: OcrService.OcrResult): OcrService.OcrResult {
@@ -14,6 +14,7 @@ object CommonResultRepair {
 
         val requesterFromRaw = extractRequester(raw)
         val branchFromRaw = extractBranch(raw)
+        val propertyTypeFromRaw = extractPropertyType(raw)
         val propertyAddressFromRaw = extractAddress(raw, "물건소재지")
         val ownerAddressFromRaw = extractAddress(raw, "소유자주소")
 
@@ -25,11 +26,16 @@ object CommonResultRepair {
         val branch = when {
             validBranch(c.branch) -> c.branch
             validBranch(branchFromRaw) -> branchFromRaw
-            else -> c.branch.takeIf(::validBranch).orEmpty()
+            else -> ""
+        }
+        val propertyType = when {
+            validPropertyType(c.propertyType) -> c.propertyType.trim()
+            validPropertyType(propertyTypeFromRaw) -> propertyTypeFromRaw.trim()
+            else -> ""
         }
 
-        // 이전 normalizeAddress가 앞의 5~6자리 우편번호를 의도적으로 제거하고 있었다.
-        // raw 진단값에 우편번호가 포함되어 있을 때만 원래 문자열을 복구한다.
+        // 저장 데이터에는 문서에 찍힌 앞자리 숫자(우편번호/관리용 코드)를 보존한다.
+        // 지도 검색 시에는 GeocoderService가 그 앞자리 숫자만 제외해서 사용한다.
         val propertyAddress = preferPostalAddress(c.propertyAddress, propertyAddressFromRaw)
         val ownerAddress = preferPostalAddress(c.ownerAddress, ownerAddressFromRaw)
         val notes = cleanNotes(c.requestNotes)
@@ -37,6 +43,7 @@ object CommonResultRepair {
         val fixed = c.copy(
             requester = requester,
             branch = branch,
+            propertyType = propertyType,
             propertyAddress = propertyAddress,
             ownerAddress = ownerAddress,
             requestNotes = notes
@@ -46,18 +53,18 @@ object CommonResultRepair {
         return base.copy(
             parsed = fixed,
             rawText = base.rawText + buildString {
-                append("\n\n--- 최종 구조 보정 v0.14 ---\n")
+                append("\n\n--- 최종 구조 보정 v0.17 ---\n")
+                append("물건종류 확정 : ").append(fixed.propertyType).append('\n')
                 append("물건소재지 확정 : ").append(fixed.propertyAddress).append('\n')
                 append("소유자주소 확정 : ").append(fixed.ownerAddress).append('\n')
                 append("영업점 확정 : ").append(fixed.branch).append('\n')
                 append("조사의뢰자 확정 : ").append(fixed.requester).append('\n')
             },
-            preprocessMessage = base.preprocessMessage + " / 최종 구조 보정 v0.14"
+            preprocessMessage = base.preprocessMessage + " / 최종 구조 보정 v0.17"
         )
     }
 
     private fun extractRequester(raw: String): String {
-        // 같은 OCR line 안에 "농협영업점 ... ▷조사의뢰자 : 권현지"처럼 합쳐져도 찾는다.
         val regex = Regex(
             "조\\s*사\\s*의\\s*뢰\\s*자\\s*[:：]?\\s*([가-힣]{2,5})",
             setOf(RegexOption.IGNORE_CASE)
@@ -79,13 +86,37 @@ object CommonResultRepair {
             .orEmpty()
     }
 
+    private fun extractPropertyType(raw: String): String {
+        // 진단 문자열에 "물건종류 : 물건종류"가 먼저 등장할 수 있으므로 모든 후보를 검사한다.
+        val labelRegex = Regex("물\\s*건\\s*종\\s*류\\s*[:：|]?\\s*([^\\n|]{1,30})")
+        val labeled = labelRegex.findAll(raw)
+            .map { cleanSimpleValue(it.groupValues[1]) }
+            .firstOrNull(::validPropertyType)
+        if (!labeled.isNullOrBlank()) return labeled
+
+        // 표 OCR에서 라벨과 값이 서로 다른 line으로 분리된 경우를 위한 보조 후보.
+        val known = listOf(
+            "아파트", "오피스텔", "연립주택", "다세대주택", "다가구주택", "단독주택",
+            "주택", "빌라", "상가", "근린생활시설", "토지", "공장", "사무실"
+        )
+        return raw.lineSequence()
+            .map(::cleanSimpleValue)
+            .firstOrNull { line -> known.any { line.equals(it, ignoreCase = true) } }
+            .orEmpty()
+    }
+
     private fun extractAddress(raw: String, label: String): String {
         val spaced = label.map { Regex.escape(it.toString()) }.joinToString("\\s*")
-        val regex = Regex("$spaced\\s*[:：]\\s*([^\\n]+)")
-        return regex.findAll(raw)
-            .map { it.groupValues[1].replace(Regex("\\s+"), " ").trim() }
-            .firstOrNull { looksLikeAddress(it) }
-            .orEmpty()
+        // 콜론이 없거나 라벨과 값이 줄바꿈으로 분리돼도 허용한다.
+        val regex = Regex("$spaced\\s*[:：|]?\\s*([^\\n|]+)")
+        val candidates = regex.findAll(raw)
+            .map { cleanSimpleValue(it.groupValues[1]) }
+            .filter(::looksLikeAddress)
+            .toList()
+
+        // 문서 원문에 5~6자리 앞번호가 있으면 그것을 우선 보존한다.
+        return candidates.firstOrNull { Regex("^\\d{5,6}\\s+").containsMatchIn(it) }
+            ?: candidates.firstOrNull().orEmpty()
     }
 
     private fun preferPostalAddress(current: String, rawCandidate: String): String {
@@ -108,6 +139,23 @@ object CommonResultRepair {
         s = s.replace(Regex("(^|\\s)임차료\\s*[:：]"), "$1월임차료:")
         s = s.replace(Regex("월임차료\\s*[:：]\\s*[oO]\\b"), "월임차료:0")
         return s.trim()
+    }
+
+    private fun cleanSimpleValue(value: String): String = value
+        .replace(Regex("^[\\s:：|>▷.·ㆍ,;\\-]+"), "")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+
+    private fun validPropertyType(value: String): Boolean {
+        val s = cleanSimpleValue(value)
+        if (s.length !in 2..20) return false
+        val compact = s.replace(" ", "")
+        val bad = listOf(
+            "물건종류", "물건소재지", "대출종류", "조사구분", "물건소유자",
+            "전화번호", "핸드폰번호", "완료요청일"
+        )
+        if (bad.any { compact.contains(it) }) return false
+        return Regex("[가-힣A-Za-z0-9]+(?:\\s*[가-힣A-Za-z0-9]+)*").matches(s)
     }
 
     private fun validRequester(value: String): Boolean {

@@ -9,9 +9,16 @@ import java.util.Locale
 object GeocoderService {
     suspend fun resolve(context:Context,address:String):Pair<Double,Double>? = withContext(Dispatchers.IO) {
         if(address.isBlank()) return@withContext null
+        val query = address
+            .replace(Regex("^\\s*\\d{5,6}\\s+"), "")
+            .trim()
+        if(query.isBlank()) return@withContext null
         runCatching {
             @Suppress("DEPRECATION")
-            Geocoder(context, Locale.KOREA).getFromLocationName(address,1)?.firstOrNull()?.let{it.latitude to it.longitude}
+            Geocoder(context, Locale.KOREA)
+                .getFromLocationName(query,1)
+                ?.firstOrNull()
+                ?.let{it.latitude to it.longitude}
         }.getOrNull()
     }
 }
