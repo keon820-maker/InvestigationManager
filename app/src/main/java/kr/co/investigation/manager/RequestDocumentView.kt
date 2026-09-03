@@ -8,9 +8,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kr.co.investigation.manager.data.InvestigationCase
@@ -52,12 +54,12 @@ fun RequestDocumentView(c: InvestigationCase, modifier: Modifier = Modifier) {
         )
 
         Spacer(Modifier.height(24.dp))
-        Text("○관리번호 : ${c.managementNo}", docText())
+        Text("○관리번호 : ${c.managementNo}", style = docText())
         Spacer(Modifier.height(7.dp))
         Row(Modifier.fillMaxWidth()) {
-            Text("○조사담당자 : ${c.investigator}", docText(), modifier = Modifier.weight(1.2f))
-            Text("Tel) -", docText(), modifier = Modifier.weight(.8f), textAlign = TextAlign.Center)
-            Text("Fax) -", docText(), modifier = Modifier.weight(.8f), textAlign = TextAlign.End)
+            Text("○조사담당자 : ${c.investigator}", modifier = Modifier.weight(1.2f), style = docText())
+            Text("Tel) -", modifier = Modifier.weight(.8f), style = docText(), textAlign = TextAlign.Center)
+            Text("Fax) -", modifier = Modifier.weight(.8f), style = docText(), textAlign = TextAlign.End)
         }
 
         SectionTitle("1. 대 상 자")
@@ -166,7 +168,7 @@ private fun RowScope.DocCell(
     bold: Boolean = false,
     align: TextAlign = TextAlign.Left,
     minHeight: Dp = 36.dp,
-    fontSize: androidx.compose.ui.unit.TextUnit = 10.sp
+    fontSize: TextUnit = 10.sp
 ) {
     Box(
         Modifier
@@ -202,11 +204,7 @@ private fun FooterLine(text: String, bold: Boolean = false) {
     )
 }
 
-@Composable
-private fun docText() = androidx.compose.ui.text.TextStyle(
-    color = Color.Black,
-    fontSize = 11.sp
-)
+private fun docText() = TextStyle(color = Color.Black, fontSize = 11.sp)
 
 private fun ownerDisplay(c: InvestigationCase): String = buildString {
     append(c.ownerName)
@@ -228,9 +226,9 @@ private fun parseTenants(json: String): List<TenantView> = runCatching {
     val array = JSONArray(json)
     (0 until array.length()).take(10).map { i ->
         val obj = array.optJSONObject(i)
-        TenantView(
-            name = obj?.optString("name")?.ifBlank { obj.optString("tenantName") }.orEmpty(),
-            phone = obj?.optString("phone")?.ifBlank { obj.optString("mobile") }.orEmpty()
+        if (obj == null) TenantView() else TenantView(
+            name = obj.optString("name").ifBlank { obj.optString("tenantName") },
+            phone = obj.optString("phone").ifBlank { obj.optString("mobile") }
         )
     }
 }.getOrDefault(emptyList())
