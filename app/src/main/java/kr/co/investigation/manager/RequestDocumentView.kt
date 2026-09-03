@@ -218,7 +218,7 @@ private fun formatKoreanDate(value: String): String {
     val m = Regex("(\\d{4})[-./년 ]+(\\d{1,2})[-./월 ]+(\\d{1,2})").find(value)
     return if (m != null) {
         val (y, mo, d) = m.destructured
-        "$y년 ${mo.padStart(2, '0')}월 ${d.padStart(2, '0')}일"
+        "${y}년 ${mo.padStart(2, '0')}월 ${d.padStart(2, '0')}일"
     } else value
 }
 
