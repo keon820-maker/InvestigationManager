@@ -5,11 +5,16 @@ on:
   push:
     branches:
       - main
-      - feature/ocr-perspective-delete-v02
-      - feature/ocr-anchor-v03
-      - feature/ocr-spatial-v04
-      - feature/ocr-tablecells-v05
-      - feature/ocr-row-semantic-v06
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -18,6 +23,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Public repository safety check
+        shell: bash
+        run: |
+          set -euo pipefail
+          bad=$(git ls-files | grep -Ei '(^|/)(local\.properties|keystore\.properties)$|\.(jks|keystore|p12|pfx|apk|aab)$' || true)
+          if [ -n "$bad" ]; then
+            echo "Sensitive/build artifact files must not be committed:"
+            echo "$bad"
+            exit 1
+          fi
 
       - name: Set up JDK
         uses: actions/setup-java@v5
@@ -34,7 +50,9 @@ jobs:
         run: gradle assembleDebug
 
       - name: Upload APK
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: InvestigationManager-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14
