@@ -4,11 +4,7 @@ import android.content.Context
 import android.net.Uri
 import kr.co.investigation.manager.data.InvestigationCase
 
-/**
- * OCR 진입점.
- * v0.9부터 현재 조사의뢰서가 거의 동일한 고정 양식이라는 전제에 맞춰
- * FixedTemplateOcr를 기본 엔진으로 사용한다.
- */
+/** OCR 진입점. */
 object OcrService {
     data class OcrResult(
         val rawText: String,
@@ -18,7 +14,7 @@ object OcrService {
     )
 
     suspend fun recognizeCase(context: Context, uri: Uri): OcrResult =
-        FixedTemplateOcr.recognizeCase(context, uri)
+        AdaptiveOcr.recognizeCase(context, uri)
 
     suspend fun recognize(context: Context, uri: Uri): String =
         recognizeCase(context, uri).rawText
