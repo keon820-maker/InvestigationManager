@@ -3,8 +3,6 @@
 package kr.co.investigation.manager
 
 import android.net.Uri
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
@@ -13,9 +11,9 @@ import androidx.compose.foundation.lazy.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.*
 import androidx.compose.ui.unit.*
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
@@ -29,77 +27,124 @@ import java.time.LocalDate
 
 @Composable fun InvestigationApp(vm:AppViewModel){
     var screen by remember{mutableStateOf("main")}
+    var formReturn by remember{mutableStateOf("main")}
     when(screen){
-        "main"->MainScreen(vm,onNew={screen="ocr"},onDetail={vm.select(it);screen="detail"},onSettings={screen="settings"})
+        "main"->MainScreen(
+            vm,
+            onNew={screen="ocr"},
+            onEdit={vm.select(it);screen="detail"},
+            onForm={vm.select(it);formReturn="main";screen="form"},
+            onSettings={screen="settings"}
+        )
         "ocr"->OcrRegisterScreen(vm,onDone={screen="main"},onCancel={screen="main"})
-        "detail"->vm.selected.collectAsStateWithLifecycle().value?.let{DetailScreen(vm,it,onBack={screen="main"},onForm={screen="form"})}
-        "form"->vm.selected.collectAsStateWithLifecycle().value?.let{RequestFormScreen(it,onBack={screen="detail"})}
+        "detail"->vm.selected.collectAsStateWithLifecycle().value?.let{
+            DetailScreen(vm,it,onBack={screen="main"},onForm={formReturn="detail";screen="form"})
+        }
+        "form"->vm.selected.collectAsStateWithLifecycle().value?.let{
+            RequestFormScreen(it,onBack={screen=formReturn})
+        }
         "settings"->SettingsScreen(vm,onBack={screen="main"})
     }
 }
 
-@Composable fun MainScreen(vm:AppViewModel,onNew:()->Unit,onDetail:(InvestigationCase)->Unit,onSettings:()->Unit){
+@Composable fun MainScreen(
+    vm:AppViewModel,
+    onNew:()->Unit,
+    onEdit:(InvestigationCase)->Unit,
+    onForm:(InvestigationCase)->Unit,
+    onSettings:()->Unit
+){
     val cases by vm.cases.collectAsStateWithLifecycle()
     val year by vm.year.collectAsStateWithLifecycle()
+    val selected by vm.selected.collectAsStateWithLifecycle()
     var q by remember{mutableStateOf("")}
     var mobileTab by remember{mutableIntStateOf(0)}
     val filtered=remember(cases,q){cases.filter{q.isBlank()|| listOf(it.managementNo,it.debtorName,it.propertyAddress,it.phone,it.mobile).any{s->s.contains(q,true)}}}
     Scaffold(topBar={TopAppBar(title={Text("조사관리")},actions={TextButton(onClick={vm.setYear(year-1)}){Text("‹")};Text("$year");TextButton(onClick={vm.setYear(year+1)}){Text("›")};TextButton(onClick=onSettings){Text("데이터")};Button(onClick=onNew){Text("+ 신규등록")}})}){pad->
         BoxWithConstraints(Modifier.padding(pad).fillMaxSize()){
             val wide=maxWidth>=600.dp
+            val list:@Composable (Modifier)->Unit={m->
+                CaseList(
+                    items=filtered,
+                    q=q,
+                    onQ={q=it},
+                    onSelect={vm.select(it)},
+                    onEdit=onEdit,
+                    onForm=onForm,
+                    onComplete={vm.update(it.copy(status="완료"))},
+                    modifier=m
+                )
+            }
             if(wide) Row(Modifier.fillMaxSize()){
-                CaseList(filtered,q,{q=it},onDetail,Modifier.weight(.44f))
-                NativeMapPane(filtered,vm.selected.collectAsStateWithLifecycle().value,Modifier.weight(.56f))
+                list(Modifier.weight(.44f))
+                NativeMapPane(filtered,selected,Modifier.weight(.56f))
             } else Column(Modifier.fillMaxSize()){
                 TabRow(mobileTab){
                     Tab(mobileTab==0,{mobileTab=0},text={Text("목록")})
                     Tab(mobileTab==1,{mobileTab=1},text={Text("지도")})
                 }
-                if(mobileTab==0) CaseList(filtered,q,{q=it},onDetail,Modifier.fillMaxSize()) else NativeMapPane(filtered,null,Modifier.fillMaxSize())
+                if(mobileTab==0) list(Modifier.fillMaxSize()) else NativeMapPane(filtered,selected,Modifier.fillMaxSize())
             }
         }
     }
 }
 
-@Composable fun CaseList(items:List<InvestigationCase>,q:String,onQ:(String)->Unit,onDetail:(InvestigationCase)->Unit,modifier:Modifier){
+@Composable fun CaseList(
+    items:List<InvestigationCase>,
+    q:String,
+    onQ:(String)->Unit,
+    onSelect:(InvestigationCase)->Unit,
+    onEdit:(InvestigationCase)->Unit,
+    onForm:(InvestigationCase)->Unit,
+    onComplete:(InvestigationCase)->Unit,
+    modifier:Modifier
+){
+    var menuCaseId by remember{mutableStateOf<Long?>(null)}
     Column(modifier.padding(12.dp)){
         OutlinedTextField(q,onQ,label={Text("관리번호·채무자·주소·전화번호 검색")},modifier=Modifier.fillMaxWidth())
-        Spacer(Modifier.height(8.dp))
+        Text("리스트를 누르면 작업 메뉴가 열립니다.",style=MaterialTheme.typography.bodySmall,modifier=Modifier.padding(top=5.dp,bottom=3.dp))
         LazyColumn{
             items(items,key={it.id}){c->
-                Card(Modifier.fillMaxWidth().padding(vertical=4.dp).clickable{onDetail(c)}){
-                    Column(Modifier.padding(12.dp)){
-                        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){
-                            Text(c.managementNo.ifBlank{"관리번호 없음"},style=MaterialTheme.typography.titleMedium)
-                            AssistChip(onClick={},label={Text(c.status)})
+                Box(Modifier.fillMaxWidth()){
+                    Card(
+                        Modifier.fillMaxWidth().padding(vertical=4.dp).clickable{
+                            onSelect(c)
+                            menuCaseId=c.id
                         }
-                        Text(c.debtorName)
-                        Text(c.propertyAddress,maxLines=2)
-                        Text("완료요청 ${c.dueDate}",style=MaterialTheme.typography.bodySmall)
+                    ){
+                        Column(Modifier.padding(12.dp)){
+                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){
+                                Text(c.managementNo.ifBlank{"관리번호 없음"},style=MaterialTheme.typography.titleMedium)
+                                AssistChip(onClick={},label={Text(c.status)})
+                            }
+                            Text(c.debtorName)
+                            Text(c.propertyAddress,maxLines=2)
+                            Text("완료요청 ${c.dueDate}",style=MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    DropdownMenu(
+                        expanded=menuCaseId==c.id,
+                        onDismissRequest={menuCaseId=null}
+                    ){
+                        DropdownMenuItem(
+                            text={Text("편집")},
+                            onClick={menuCaseId=null;onEdit(c)}
+                        )
+                        DropdownMenuItem(
+                            text={Text("조사의뢰서")},
+                            onClick={menuCaseId=null;onForm(c)}
+                        )
+                        DropdownMenuItem(
+                            text={Text(if(c.status=="완료") "완료처리됨" else "완료처리")},
+                            enabled=c.status!="완료",
+                            onClick={menuCaseId=null;onComplete(c)}
+                        )
                     }
                 }
             }
         }
     }
 }
-
-@Composable fun MapPane(items:List<InvestigationCase>,selected:InvestigationCase?,modifier:Modifier){
-    val html=remember(items,selected){mapHtml(items,selected)}
-    AndroidView(modifier=modifier,factory={ctx->WebView(ctx).apply{settings.javaScriptEnabled=true;webViewClient=WebViewClient()}},update={it.loadDataWithBaseURL("https://www.openstreetmap.org",html,"text/html","UTF-8",null)})
-}
-
-fun mapHtml(items:List<InvestigationCase>,selected:InvestigationCase?):String{
-    val pts=items.filter{it.propertyLatitude!=null&&it.propertyLongitude!=null}
-    val center=selected?.takeIf{it.propertyLatitude!=null}?:pts.firstOrNull()
-    val lat=center?.propertyLatitude?:37.5665
-    val lon=center?.propertyLongitude?:126.9780
-    val markers=pts.joinToString("\n"){
-        val extra=if(selected?.id==it.id) ".openPopup()" else ""
-        "L.marker([${it.propertyLatitude},${it.propertyLongitude}]).addTo(map).bindPopup(${js("${it.managementNo}<br>${it.debtorName}<br>${it.propertyAddress}")})$extra;"
-    }
-    return """<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'><link rel='stylesheet' href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'/><script src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'></script><style>html,body,#m{height:100%;margin:0}</style></head><body><div id='m'></div><script>var map=L.map('m').setView([$lat,$lon],${if(selected!=null)15 else 10});L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);$markers</script></body></html>"""
-}
-fun js(s:String)="`"+s.replace("`","\\`")+"`"
 
 @Composable fun OcrRegisterScreen(vm:AppViewModel,onDone:()->Unit,onCancel:()->Unit){
     val ctx=LocalContext.current
@@ -232,24 +277,22 @@ fun js(s:String)="`"+s.replace("`","\\`")+"`"
 @Composable fun RequestFormScreen(c:InvestigationCase,onBack:()->Unit){
     val ctx=LocalContext.current
     var msg by remember{mutableStateOf("")}
+    val vertical=rememberScrollState()
+    val horizontal=rememberScrollState()
     Scaffold(topBar={TopAppBar(title={Text("조사의뢰서")},navigationIcon={TextButton(onClick=onBack){Text("뒤로")}},actions={Button(onClick={msg=RequestPdf.create(ctx,c).absolutePath}){Text("PDF 저장")}})}){pad->
-        Column(Modifier.padding(pad).verticalScroll(rememberScrollState()).padding(18.dp)){
-            Text("조 사 의 뢰 서",style=MaterialTheme.typography.headlineMedium,modifier=Modifier.align(Alignment.CenterHorizontally))
-            Text("[ 의뢰일 : ${c.requestDate} ]",modifier=Modifier.align(Alignment.CenterHorizontally))
-            HorizontalDivider(Modifier.padding(vertical=12.dp))
-            Text("관리번호 : ${c.managementNo}\n조사담당자 : ${c.investigator}")
-            Text("\n1. 대상자",style=MaterialTheme.typography.titleMedium)
-            FormRow("채무자명",c.debtorName,"전화번호",c.phone)
-            FormRow("완료요청일",c.dueDate,"핸드폰번호",c.mobile)
-            Text("\n2. 의뢰 내용",style=MaterialTheme.typography.titleMedium)
-            FormRow("조사구분",c.investigationType,"대출종류",c.loanType)
-            FormRow("물건종류",c.propertyType,"물건소유자",c.ownerName)
-            Text("물건소재지 : ${c.propertyAddress}")
-            Text("소유자 주소 : ${c.ownerAddress}")
-            Text("\n3. 기타요청사항\n${c.requestNotes}")
-            Spacer(Modifier.height(20.dp))
-            Text("영업점 : ${c.branch}\n조사의뢰자 : ${c.requester}")
-            if(msg.isNotBlank()) Text("\n저장 위치: $msg",style=MaterialTheme.typography.bodySmall)
+        Box(
+            Modifier
+                .padding(pad)
+                .fillMaxSize()
+                .background(Color(0xFFECECEC))
+                .verticalScroll(vertical)
+                .horizontalScroll(horizontal)
+                .padding(16.dp)
+        ){
+            Column{
+                RequestDocumentView(c)
+                if(msg.isNotBlank()) Text("저장 위치: $msg",style=MaterialTheme.typography.bodySmall,modifier=Modifier.padding(top=8.dp))
+            }
         }
     }
 }
