@@ -2,6 +2,7 @@ package kr.co.investigation.manager
 
 import android.content.Intent
 import android.net.Uri
+import android.view.MotionEvent
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,10 +18,12 @@ import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Overlay
 
 /**
  * Android 네이티브 osmdroid 지도.
- * v0.26부터 진행중 조사건만 마커로 표시하며, 마커를 누르면 길안내 버튼을 제공한다.
+ * 진행중 조사건만 마커로 표시하며 마커에서 길안내를 실행한다.
+ * v0.27: 두 번 탭으로 확대/축소 토글을 추가한다.
  */
 @Composable
 fun NativeMapPane(
@@ -84,8 +87,10 @@ fun NativeMapPane(
         MapView(context).apply {
             setTileSource(TileSourceFactory.MAPNIK)
             setMultiTouchControls(true)
+            setTilesScaledToDpi(true)
             controller.setZoom(10.0)
             controller.setCenter(GeoPoint(37.5665, 126.9780))
+            overlays.add(DoubleTapZoomOverlay())
         }
     }
 
@@ -156,19 +161,42 @@ fun NativeMapPane(
         )
 
         Surface(
-            modifier = Modifier.align(Alignment.TopStart).padding(8.dp),
-            tonalElevation = 3.dp,
-            shape = MaterialTheme.shapes.small
+            modifier = Modifier.align(Alignment.TopStart).padding(10.dp),
+            tonalElevation = 4.dp,
+            shadowElevation = 2.dp,
+            shape = MaterialTheme.shapes.large
         ) {
-            Text(
-                text = if (points.isEmpty()) {
-                    if (items.none { it.status == "진행중" }) "진행중 조사건 없음" else "진행중 건 좌표 확인 중"
-                } else {
-                    "진행중 지도 표시 ${points.size}건"
-                },
-                style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-            )
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                Text(
+                    text = if (points.isEmpty()) {
+                        if (items.none { it.status == "진행중" }) "진행중 조사건 없음" else "진행중 건 좌표 확인 중"
+                    } else {
+                        "진행중 ${points.size}건"
+                    },
+                    style = MaterialTheme.typography.labelLarge
+                )
+                Text(
+                    "두 번 탭 확대/축소 · 두 손가락 확대/축소",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+/**
+ * osmdroid 기본 더블탭보다 먼저 이벤트를 처리한다.
+ * 가까이 확대된 상태(16 이상)에서는 한 단계 축소, 그 외에는 한 단계 확대한다.
+ */
+private class DoubleTapZoomOverlay : Overlay() {
+    override fun onDoubleTap(e: MotionEvent, mapView: MapView): Boolean {
+        val x = e.x.toInt()
+        val y = e.y.toInt()
+        return if (mapView.zoomLevelDouble >= 16.0) {
+            mapView.controller.zoomOutFixing(x, y)
+        } else {
+            mapView.controller.zoomInFixing(x, y)
         }
     }
 }
