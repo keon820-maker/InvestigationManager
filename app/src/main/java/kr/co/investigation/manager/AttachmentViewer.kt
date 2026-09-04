@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package kr.co.investigation.manager
 
 import android.content.Intent
@@ -34,6 +36,9 @@ fun AttachmentViewerScreen(att: Attachment, onBack: () -> Unit) {
     var offset by remember(att.id) { mutableStateOf(Offset.Zero) }
     val bitmap by produceState<Bitmap?>(initialValue = null, att.localPath) {
         value = withContext(Dispatchers.IO) { loadPreviewBitmap(att.localPath) }
+    }
+    DisposableEffect(bitmap) {
+        onDispose { bitmap?.takeIf { !it.isRecycled }?.recycle() }
     }
 
     Scaffold(
