@@ -7,6 +7,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -44,13 +45,18 @@ fun AttachmentViewerScreen(att: Attachment, onBack: () -> Unit) {
         }
     }
 
+    fun resetZoom() {
+        scale = 1f
+        offset = Offset.Zero
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(attachmentTitle(att)) },
                 navigationIcon = { TextButton(onClick = onBack) { Text("뒤로") } },
                 actions = {
-                    TextButton(onClick = { scale = 1f; offset = Offset.Zero }) { Text("맞춤") }
+                    TextButton(onClick = ::resetZoom) { Text("화면맞춤") }
                     TextButton(onClick = {
                         openError = ""
                         runCatching {
@@ -64,26 +70,43 @@ fun AttachmentViewerScreen(att: Attachment, onBack: () -> Unit) {
                             require(intent.resolveActivity(ctx.packageManager) != null) { "이 파일을 열 수 있는 앱이 없습니다." }
                             ctx.startActivity(intent)
                         }.onFailure { openError = it.message ?: "원본 열기에 실패했습니다." }
-                    }) { Text("외부 앱으로 열기") }
+                    }) { Text("외부 열기") }
                 }
             )
         }
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
             Text(
-                "${att.originalName}  ·  ${att.width ?: "?"}×${att.height ?: "?"}  ·  ${att.byteSize / 1024} KB\nSHA-256 ${att.sha256}",
+                "${att.originalName}  ·  ${att.width ?: "?"}×${att.height ?: "?"}  ·  ${att.byteSize / 1024} KB",
                 style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
             )
             if (openError.isNotBlank()) {
-                Text(openError, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+                Text(openError, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp))
             }
             HorizontalDivider()
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(Color(0xFF161616))
+                    .background(Color(0xFF111416))
                     .pointerInput(att.id) {
+                        detectTapGestures(
+                            onDoubleTap = { tap ->
+                                if (scale > 1.05f) {
+                                    resetZoom()
+                                } else {
+                                    val target = 2.5f
+                                    scale = target
+                                    offset = Offset(
+                                        x = (size.width / 2f - tap.x) * 1.15f,
+                                        y = (size.height / 2f - tap.y) * 1.15f
+                                    )
+                                }
+                            }
+                        )
+                    }
+                    .pointerInput(att.id, scale) {
                         detectTransformGestures { _, pan, zoom, _ ->
                             val nextScale = (scale * zoom).coerceIn(1f, 8f)
                             scale = nextScale
@@ -111,13 +134,14 @@ fun AttachmentViewerScreen(att: Attachment, onBack: () -> Unit) {
                         )
                         Surface(
                             modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp),
-                            color = Color.Black.copy(alpha = .62f),
+                            color = Color.Black.copy(alpha = .68f),
                             contentColor = Color.White,
-                            shape = MaterialTheme.shapes.medium
+                            shape = MaterialTheme.shapes.large
                         ) {
                             Text(
-                                "두 손가락으로 확대·축소 / 드래그 이동  ${(scale * 100).toInt()}%",
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                                "두 번 탭 확대/맞춤 · 두 손가락 확대/축소 · 드래그 이동   ${(scale * 100).toInt()}%",
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
                             )
                         }
                     }
