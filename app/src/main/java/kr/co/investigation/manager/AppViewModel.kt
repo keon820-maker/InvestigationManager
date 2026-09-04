@@ -18,7 +18,6 @@ class AppViewModel(app:Application):AndroidViewModel(app){
     private val geocodeAttempted = mutableSetOf<String>()
 
     init {
-        // 이전 버전에서 주소는 저장됐지만 좌표 변환이 실패한 조사건도 앱을 열면 자동 재시도한다.
         viewModelScope.launch {
             cases.collect { list ->
                 list.filter {
@@ -63,6 +62,60 @@ class AppViewModel(app:Application):AndroidViewModel(app){
         }
     }
 
+    fun startInvestigation(c: InvestigationCase) {
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val updated = c.copy(
+                status = "진행중",
+                startedAt = c.startedAt ?: now,
+                completedAt = null,
+                updatedAt = now
+            )
+            db.cases().update(updated)
+            if (_selected.value?.id == c.id) _selected.value = updated
+        }
+    }
+
+    fun completeInvestigation(c: InvestigationCase) {
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val updated = c.copy(
+                status = "완료",
+                startedAt = c.startedAt ?: now,
+                completedAt = now,
+                updatedAt = now
+            )
+            db.cases().update(updated)
+            if (_selected.value?.id == c.id) _selected.value = updated
+        }
+    }
+
+    fun saveRouteOrder(ordered: List<InvestigationCase>) {
+        if (ordered.isEmpty()) return
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val updates = ordered.mapIndexed { index, c ->
+                c.copy(routeOrder = index + 1, updatedAt = now)
+            }
+            db.cases().updateAll(updates)
+            val selectedId = _selected.value?.id
+            if (selectedId != null) updates.firstOrNull { it.id == selectedId }?.let { _selected.value = it }
+        }
+    }
+
+    suspend fun findDuplicates(c: InvestigationCase): List<InvestigationCase> {
+        val management = normalizeKey(c.managementNo)
+        val address = normalizeKey(c.propertyAddress)
+        val debtor = normalizeKey(c.debtorName)
+        return db.cases().getYear(c.year).filter { old ->
+            if (old.id == c.id) return@filter false
+            val managementSame = management.isNotBlank() && normalizeKey(old.managementNo) == management
+            val addressDebtorSame = address.isNotBlank() && debtor.isNotBlank() &&
+                normalizeKey(old.propertyAddress) == address && normalizeKey(old.debtorName) == debtor
+            managementSame || addressDebtorSame
+        }
+    }
+
     suspend fun deleteCase(c: InvestigationCase) {
         val attachments = db.attachments().getForCase(c.id)
         attachments.forEach { runCatching { File(it.localPath).delete() } }
@@ -70,4 +123,9 @@ class AppViewModel(app:Application):AndroidViewModel(app){
         db.cases().delete(c)
         if (_selected.value?.id == c.id) _selected.value = null
     }
+
+    private fun normalizeKey(value: String): String = value
+        .trim()
+        .lowercase()
+        .replace(Regex("[\\s\\-()\\[\\],.]"), "")
 }

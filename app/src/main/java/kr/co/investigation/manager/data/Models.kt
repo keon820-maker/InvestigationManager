@@ -17,6 +17,7 @@ data class InvestigationCase(
     val mobile: String = "",
     val dueDate: String = "",
     val plannedDate: String = "",
+    val routeOrder: Int = 0,
     val investigationType: String = "",
     val loanType: String = "",
     val propertyType: String = "",
@@ -35,6 +36,8 @@ data class InvestigationCase(
     val requester: String = "",
     val investigationMemo: String = "",
     val status: String = "신규",
+    val startedAt: Long? = null,
+    val completedAt: Long? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )
@@ -57,11 +60,14 @@ data class Attachment(
 
 @Dao
 interface CaseDao {
-    @Query("SELECT * FROM cases WHERE year=:year ORDER BY CASE WHEN plannedDate='' THEN 1 ELSE 0 END ASC, plannedDate ASC, dueDate ASC, id DESC") fun observeYear(year:Int): Flow<List<InvestigationCase>>
+    @Query("SELECT * FROM cases WHERE year=:year ORDER BY CASE WHEN plannedDate='' THEN 1 ELSE 0 END ASC, plannedDate ASC, CASE WHEN routeOrder<=0 THEN 999999 ELSE routeOrder END ASC, dueDate ASC, id DESC")
+    fun observeYear(year:Int): Flow<List<InvestigationCase>>
+
     @Query("SELECT * FROM cases WHERE id=:id") suspend fun get(id:Long): InvestigationCase?
     @Query("SELECT * FROM cases WHERE year=:year") suspend fun getYear(year:Int): List<InvestigationCase>
     @Insert suspend fun insert(value:InvestigationCase):Long
     @Update suspend fun update(value:InvestigationCase)
+    @Update suspend fun updateAll(values:List<InvestigationCase>)
     @Delete suspend fun delete(value:InvestigationCase)
     @Query("DELETE FROM cases WHERE year=:year") suspend fun deleteYear(year:Int)
 }
@@ -76,7 +82,7 @@ interface AttachmentDao {
     @Query("DELETE FROM attachments WHERE caseId=:caseId") suspend fun deleteForCase(caseId:Long)
 }
 
-@Database(entities=[InvestigationCase::class, Attachment::class], version=3, exportSchema=false)
+@Database(entities=[InvestigationCase::class, Attachment::class], version=4, exportSchema=false)
 abstract class AppDb: RoomDatabase() {
     abstract fun cases():CaseDao
     abstract fun attachments():AttachmentDao
@@ -99,9 +105,17 @@ abstract class AppDb: RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object: androidx.room.migration.Migration(3, 4) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE cases ADD COLUMN routeOrder INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE cases ADD COLUMN startedAt INTEGER")
+                db.execSQL("ALTER TABLE cases ADD COLUMN completedAt INTEGER")
+            }
+        }
+
         fun get(context:android.content.Context):AppDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, AppDb::class.java, "investigation.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
                 .also{instance=it}
         }
