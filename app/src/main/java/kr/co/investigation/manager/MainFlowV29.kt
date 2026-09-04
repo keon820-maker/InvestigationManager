@@ -44,7 +44,7 @@ import java.time.temporal.ChronoUnit
 import java.util.Locale
 import kotlin.math.*
 
-/** v0.29: 일정/캘린더/지도/연락/길안내를 하나의 현장 흐름으로 통합. */
+/** v0.30: 폴드/태블릿 적응형 레이아웃 + 기존 v0.29 현장 흐름 유지. */
 @Composable
 fun InvestigationAppV29(vm: AppViewModel) {
     val context = LocalContext.current
@@ -183,7 +183,10 @@ private fun MainScreenV29(
     var navCase by remember { mutableStateOf<InvestigationCase?>(null) }
     var callCase by remember { mutableStateOf<InvestigationCase?>(null) }
     var nextAfterComplete by remember { mutableStateOf<InvestigationCase?>(null) }
-    val compact = LocalConfiguration.current.screenWidthDp < 600
+    val configuration = LocalConfiguration.current
+    // Fold 펼침/일반 태블릿을 단순 600dp로 구분하지 않는다.
+    // 960dp 이상인 충분히 넓은 창에서만 좌우 2분할하고, 그 외에는 일정/지도 단일 화면을 사용한다.
+    val splitLayout = configuration.screenWidthDp >= 960 && configuration.screenHeightDp >= 600
     val todayDate = LocalDate.now()
     val today = todayDate.toString()
     val tomorrow = todayDate.plusDays(1).toString()
@@ -290,7 +293,7 @@ private fun MainScreenV29(
             )
         },
         bottomBar = {
-            if (compact) {
+            if (!splitLayout) {
                 NavigationBar {
                     NavigationBarItem(
                         selected = mobileTab == 0,
@@ -318,7 +321,9 @@ private fun MainScreenV29(
         }
     ) { pad ->
         BoxWithConstraints(Modifier.padding(pad).fillMaxSize()) {
-            val wide = maxWidth >= 600.dp
+            // 실제 사용 가능한 창 폭을 다시 확인한다. 폴드 펼침은 단일 화면,
+            // 큰 태블릿 가로모드처럼 충분히 넓을 때만 안정적으로 좌우 분할한다.
+            val wide = maxWidth >= 960.dp && maxHeight >= 560.dp
             val listPane: @Composable (Modifier) -> Unit = { modifier ->
                 SchedulePaneV29(
                     items = listItems,
@@ -354,14 +359,15 @@ private fun MainScreenV29(
             }
 
             if (wide) {
+                val listWidth = (maxWidth * .40f).coerceIn(400.dp, 520.dp)
                 Row(Modifier.fillMaxSize()) {
-                    listPane(Modifier.weight(.46f))
+                    listPane(Modifier.width(listWidth).fillMaxHeight())
                     VerticalDivider()
                     NativeMapPaneV29(
                         items = mapItems,
                         selected = selected,
                         onNavigate = { navCase = it },
-                        modifier = Modifier.weight(.54f)
+                        modifier = Modifier.weight(1f)
                     )
                 }
             } else {
