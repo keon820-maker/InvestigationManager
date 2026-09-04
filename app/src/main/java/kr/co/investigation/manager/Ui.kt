@@ -11,7 +11,6 @@ import androidx.compose.foundation.lazy.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.*
 import androidx.compose.ui.unit.*
 import androidx.core.content.FileProvider
@@ -28,6 +27,7 @@ import java.time.LocalDate
 @Composable fun InvestigationApp(vm:AppViewModel){
     var screen by remember{mutableStateOf("main")}
     var formReturn by remember{mutableStateOf("main")}
+    var viewingAttachment by remember{mutableStateOf<Attachment?>(null)}
     when(screen){
         "main"->MainScreen(
             vm,
@@ -38,10 +38,19 @@ import java.time.LocalDate
         )
         "ocr"->OcrRegisterScreen(vm,onDone={screen="main"},onCancel={screen="main"})
         "detail"->vm.selected.collectAsStateWithLifecycle().value?.let{
-            DetailScreen(vm,it,onBack={screen="main"},onForm={formReturn="detail";screen="form"})
+            DetailScreen(
+                vm=vm,
+                c0=it,
+                onBack={screen="main"},
+                onForm={formReturn="detail";screen="form"},
+                onAttachment={att->viewingAttachment=att;screen="attachment"}
+            )
         }
         "form"->vm.selected.collectAsStateWithLifecycle().value?.let{
             RequestFormScreen(it,onBack={screen=formReturn})
+        }
+        "attachment"->viewingAttachment?.let{
+            AttachmentViewerScreen(it,onBack={screen="detail"})
         }
         "settings"->SettingsScreen(vm,onBack={screen="main"})
     }
@@ -211,6 +220,8 @@ import java.time.LocalDate
     f("관리번호",c.managementNo){c.copy(managementNo=it)}
     f("의뢰일",c.requestDate){c.copy(requestDate=it)}
     f("조사담당자",c.investigator){c.copy(investigator=it)}
+    f("조사담당자 전화",c.investigatorPhone){c.copy(investigatorPhone=it)}
+    f("조사담당자 Fax",c.investigatorFax){c.copy(investigatorFax=it)}
     f("채무자명",c.debtorName){c.copy(debtorName=it)}
     f("전화번호",c.phone){c.copy(phone=it)}
     f("핸드폰번호",c.mobile){c.copy(mobile=it)}
@@ -225,10 +236,18 @@ import java.time.LocalDate
     f("소유자 주소",c.ownerAddress){c.copy(ownerAddress=it)}
     f("기타요청사항",c.requestNotes){c.copy(requestNotes=it)}
     f("영업점",c.branch){c.copy(branch=it)}
+    f("영업점 전화",c.branchPhone){c.copy(branchPhone=it)}
+    f("영업점 Fax",c.branchFax){c.copy(branchFax=it)}
     f("조사의뢰자",c.requester){c.copy(requester=it)}
 }
 
-@Composable fun DetailScreen(vm:AppViewModel,c0:InvestigationCase,onBack:()->Unit,onForm:()->Unit){
+@Composable fun DetailScreen(
+    vm:AppViewModel,
+    c0:InvestigationCase,
+    onBack:()->Unit,
+    onForm:()->Unit,
+    onAttachment:(Attachment)->Unit
+){
     val ctx=LocalContext.current
     val scope=rememberCoroutineScope()
     var c by remember(c0){mutableStateOf(c0)}
@@ -263,8 +282,30 @@ import java.time.LocalDate
                 }){Text("카메라 촬영")}
             }
             Text("첨부 원본 ${atts.size}개",style=MaterialTheme.typography.titleMedium)
-            atts.forEach{
-                Text("• ${it.originalName}  ${it.width}×${it.height}  ${it.byteSize/1024} KB\n  SHA-256 ${it.sha256.take(18)}…",style=MaterialTheme.typography.bodySmall,modifier=Modifier.padding(4.dp))
+            Text("항목을 누르면 저장된 원본을 확대해서 확인할 수 있습니다.",style=MaterialTheme.typography.bodySmall)
+            atts.forEach{att->
+                OutlinedCard(
+                    modifier=Modifier.fillMaxWidth().padding(vertical=4.dp).clickable{onAttachment(att)}
+                ){
+                    Row(
+                        Modifier.fillMaxWidth().padding(10.dp),
+                        verticalAlignment=Alignment.CenterVertically
+                    ){
+                        Column(Modifier.weight(1f)){
+                            Text(
+                                when(att.type){
+                                    "ORIGINAL_REQUEST"->"원본 조사의뢰서"
+                                    "CONFIRMATION"->"조사확인서 원본"
+                                    else->"첨부 원본"
+                                },
+                                style=MaterialTheme.typography.titleSmall
+                            )
+                            Text("${att.originalName}  ${att.width}×${att.height}  ${att.byteSize/1024} KB",style=MaterialTheme.typography.bodySmall)
+                            Text("SHA-256 ${att.sha256.take(24)}…",style=MaterialTheme.typography.bodySmall)
+                        }
+                        TextButton(onClick={onAttachment(att)}){Text("원본 보기")}
+                    }
+                }
             }
             Spacer(Modifier.height(24.dp))
             HorizontalDivider()
@@ -277,22 +318,10 @@ import java.time.LocalDate
 @Composable fun RequestFormScreen(c:InvestigationCase,onBack:()->Unit){
     val ctx=LocalContext.current
     var msg by remember{mutableStateOf("")}
-    val vertical=rememberScrollState()
-    val horizontal=rememberScrollState()
     Scaffold(topBar={TopAppBar(title={Text("조사의뢰서")},navigationIcon={TextButton(onClick=onBack){Text("뒤로")}},actions={Button(onClick={msg=RequestPdf.create(ctx,c).absolutePath}){Text("PDF 저장")}})}){pad->
-        Box(
-            Modifier
-                .padding(pad)
-                .fillMaxSize()
-                .background(Color(0xFFECECEC))
-                .verticalScroll(vertical)
-                .horizontalScroll(horizontal)
-                .padding(16.dp)
-        ){
-            Column{
-                RequestDocumentView(c)
-                if(msg.isNotBlank()) Text("저장 위치: $msg",style=MaterialTheme.typography.bodySmall,modifier=Modifier.padding(top=8.dp))
-            }
+        Column(Modifier.padding(pad).fillMaxSize()){
+            if(msg.isNotBlank()) Text("저장 위치: $msg",style=MaterialTheme.typography.bodySmall,modifier=Modifier.padding(horizontal=12.dp,vertical=6.dp))
+            ZoomableRequestDocument(c,Modifier.weight(1f))
         }
     }
 }
