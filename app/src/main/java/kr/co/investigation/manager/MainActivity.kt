@@ -10,7 +10,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             InvestigationTheme {
-                InvestigationAppV28(viewModel())
+                InvestigationAppV29(viewModel())
             }
         }
     }
