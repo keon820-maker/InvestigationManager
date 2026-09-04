@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package kr.co.investigation.manager
 
 import android.net.Uri
@@ -58,7 +60,6 @@ fun InvestigationAppV25(vm: AppViewModel) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreenV25(
     vm: AppViewModel,
@@ -342,7 +343,6 @@ fun PlannedDateField(value: String, onChange: (String) -> Unit) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PlannedDateDialog(initial: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
     val state = rememberDatePickerState(initialSelectedDateMillis = plannedDateMillis(initial))
