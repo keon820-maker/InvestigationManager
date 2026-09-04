@@ -29,16 +29,19 @@ import kr.co.investigation.manager.data.Attachment
 import java.io.File
 import kotlin.math.max
 
+private data class PreviewResult(val bitmap: Bitmap? = null, val error: String = "")
+
 @Composable
 fun AttachmentViewerScreen(att: Attachment, onBack: () -> Unit) {
     val ctx = LocalContext.current
     var scale by remember(att.id) { mutableFloatStateOf(1f) }
     var offset by remember(att.id) { mutableStateOf(Offset.Zero) }
-    val bitmap by produceState<Bitmap?>(initialValue = null, att.localPath) {
-        value = withContext(Dispatchers.IO) { loadPreviewBitmap(att.localPath) }
-    }
-    DisposableEffect(bitmap) {
-        onDispose { bitmap?.takeIf { !it.isRecycled }?.recycle() }
+    var openError by remember(att.id) { mutableStateOf("") }
+    val preview by produceState(initialValue = PreviewResult(), att.localPath) {
+        value = withContext(Dispatchers.IO) {
+            runCatching { PreviewResult(bitmap = loadPreviewBitmap(att.localPath)) }
+                .getOrElse { PreviewResult(error = it.message ?: "원본 미리보기를 열 수 없습니다.") }
+        }
     }
 
     Scaffold(
@@ -49,17 +52,19 @@ fun AttachmentViewerScreen(att: Attachment, onBack: () -> Unit) {
                 actions = {
                     TextButton(onClick = { scale = 1f; offset = Offset.Zero }) { Text("맞춤") }
                     TextButton(onClick = {
+                        openError = ""
                         runCatching {
                             val file = File(att.localPath)
+                            require(file.exists()) { "원본 파일이 없습니다." }
                             val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", file)
-                            ctx.startActivity(
-                                Intent(Intent.ACTION_VIEW).apply {
-                                    setDataAndType(uri, att.mimeType.ifBlank { "image/*" })
-                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                }
-                            )
-                        }
-                    }) { Text("원본 열기") }
+                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(uri, att.mimeType.ifBlank { "image/*" })
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            require(intent.resolveActivity(ctx.packageManager) != null) { "이 파일을 열 수 있는 앱이 없습니다." }
+                            ctx.startActivity(intent)
+                        }.onFailure { openError = it.message ?: "원본 열기에 실패했습니다." }
+                    }) { Text("외부 앱으로 열기") }
                 }
             )
         }
@@ -70,6 +75,9 @@ fun AttachmentViewerScreen(att: Attachment, onBack: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
             )
+            if (openError.isNotBlank()) {
+                Text(openError, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+            }
             HorizontalDivider()
             Box(
                 Modifier
@@ -84,33 +92,34 @@ fun AttachmentViewerScreen(att: Attachment, onBack: () -> Unit) {
                     },
                 contentAlignment = Alignment.Center
             ) {
-                val bmp = bitmap
-                if (bmp == null) {
-                    CircularProgressIndicator()
-                } else {
-                    androidx.compose.foundation.Image(
-                        bitmap = bmp.asImageBitmap(),
-                        contentDescription = att.originalName,
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer(
-                                scaleX = scale,
-                                scaleY = scale,
-                                translationX = offset.x,
-                                translationY = offset.y
-                            )
-                    )
-                    Surface(
-                        modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp),
-                        color = Color.Black.copy(alpha = .62f),
-                        contentColor = Color.White,
-                        shape = MaterialTheme.shapes.medium
-                    ) {
-                        Text(
-                            "두 손가락으로 확대·축소 / 드래그 이동  ${(scale * 100).toInt()}%",
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                when {
+                    preview.error.isNotBlank() -> Text(preview.error, color = Color.White, modifier = Modifier.padding(20.dp))
+                    preview.bitmap == null -> CircularProgressIndicator()
+                    else -> {
+                        androidx.compose.foundation.Image(
+                            bitmap = preview.bitmap!!.asImageBitmap(),
+                            contentDescription = att.originalName,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer(
+                                    scaleX = scale,
+                                    scaleY = scale,
+                                    translationX = offset.x,
+                                    translationY = offset.y
+                                )
                         )
+                        Surface(
+                            modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp),
+                            color = Color.Black.copy(alpha = .62f),
+                            contentColor = Color.White,
+                            shape = MaterialTheme.shapes.medium
+                        ) {
+                            Text(
+                                "두 손가락으로 확대·축소 / 드래그 이동  ${(scale * 100).toInt()}%",
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -124,13 +133,13 @@ private fun attachmentTitle(att: Attachment): String = when (att.type) {
     else -> "첨부 원본"
 }
 
-private fun loadPreviewBitmap(path: String, maxSide: Int = 2600): Bitmap? {
+private fun loadPreviewBitmap(path: String, maxSide: Int = 1600): Bitmap {
     val file = File(path)
-    if (!file.exists()) return null
+    require(file.exists()) { "원본 파일이 없습니다." }
 
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeFile(path, bounds)
-    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    require(bounds.outWidth > 0 && bounds.outHeight > 0) { "지원하지 않는 이미지 형식입니다." }
 
     var sample = 1
     while (max(bounds.outWidth, bounds.outHeight) / sample > maxSide) sample *= 2
@@ -139,22 +148,25 @@ private fun loadPreviewBitmap(path: String, maxSide: Int = 2600): Bitmap? {
         path,
         BitmapFactory.Options().apply {
             inSampleSize = sample
-            inPreferredConfig = Bitmap.Config.ARGB_8888
+            inPreferredConfig = Bitmap.Config.RGB_565
         }
-    ) ?: return null
+    ) ?: error("이미지 미리보기를 만들 수 없습니다.")
 
     val rotation = runCatching { ExifInterface(path).rotationDegrees }.getOrDefault(0)
     if (rotation == 0) return decoded
 
-    val rotated = Bitmap.createBitmap(
-        decoded,
-        0,
-        0,
-        decoded.width,
-        decoded.height,
-        Matrix().apply { postRotate(rotation.toFloat()) },
-        true
-    )
-    if (rotated !== decoded) decoded.recycle()
-    return rotated
+    return try {
+        Bitmap.createBitmap(
+            decoded,
+            0,
+            0,
+            decoded.width,
+            decoded.height,
+            Matrix().apply { postRotate(rotation.toFloat()) },
+            true
+        ).also { if (it !== decoded) decoded.recycle() }
+    } catch (t: Throwable) {
+        if (!decoded.isRecycled) decoded.recycle()
+        throw t
+    }
 }
