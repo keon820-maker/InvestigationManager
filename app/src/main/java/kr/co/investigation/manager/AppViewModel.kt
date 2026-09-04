@@ -14,6 +14,7 @@ class AppViewModel(app:Application):AndroidViewModel(app){
     val db=AppDb.get(app)
     private val _year=MutableStateFlow(LocalDate.now().year); val year=_year.asStateFlow()
     val cases=_year.flatMapLatest{db.cases().observeYear(it)}.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val allCases=db.cases().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     private val _selected=MutableStateFlow<InvestigationCase?>(null); val selected=_selected.asStateFlow()
     private val geocodeAttempted = mutableSetOf<String>()
 

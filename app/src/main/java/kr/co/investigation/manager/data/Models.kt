@@ -63,6 +63,9 @@ interface CaseDao {
     @Query("SELECT * FROM cases WHERE year=:year ORDER BY CASE WHEN plannedDate='' THEN 1 ELSE 0 END ASC, plannedDate ASC, CASE WHEN routeOrder<=0 THEN 999999 ELSE routeOrder END ASC, dueDate ASC, id DESC")
     fun observeYear(year:Int): Flow<List<InvestigationCase>>
 
+    @Query("SELECT * FROM cases ORDER BY year DESC, CASE WHEN plannedDate='' THEN 1 ELSE 0 END ASC, plannedDate DESC, id DESC")
+    fun observeAll(): Flow<List<InvestigationCase>>
+
     @Query("SELECT * FROM cases WHERE id=:id") suspend fun get(id:Long): InvestigationCase?
     @Query("SELECT * FROM cases WHERE year=:year") suspend fun getYear(year:Int): List<InvestigationCase>
     @Insert suspend fun insert(value:InvestigationCase):Long

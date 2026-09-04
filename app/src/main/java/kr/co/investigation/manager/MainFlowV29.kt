@@ -44,13 +44,14 @@ import java.time.temporal.ChronoUnit
 import java.util.Locale
 import kotlin.math.*
 
-/** v0.30: 폴드/태블릿 적응형 레이아웃 + 기존 v0.29 현장 흐름 유지. */
+/** v0.31: 조절 가능한 태블릿 지도 영역 + 전체 데이터시트. */
 @Composable
 fun InvestigationAppV29(vm: AppViewModel) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("investigation_ui", Context.MODE_PRIVATE) }
     var screen by remember { mutableStateOf("main") }
     var formReturn by remember { mutableStateOf("main") }
+    var detailReturn by remember { mutableStateOf("main") }
     var viewingAttachment by remember { mutableStateOf<Attachment?>(null) }
     var confirmExit by remember { mutableStateOf(false) }
     var showGuide by remember { mutableStateOf(!prefs.getBoolean("v029_guide_seen", false)) }
@@ -64,7 +65,8 @@ fun InvestigationAppV29(vm: AppViewModel) {
         screen = when (screen) {
             "attachment" -> "detail"
             "form" -> formReturn
-            "detail", "ocr", "settings", "patches", "calendar" -> "main"
+            "detail" -> detailReturn
+            "ocr", "settings", "patches", "calendar", "datasheet" -> "main"
             else -> "main"
         }
     }
@@ -101,24 +103,30 @@ fun InvestigationAppV29(vm: AppViewModel) {
         "main" -> MainScreenV29(
             vm = vm,
             onNew = { screen = "ocr" },
-            onEdit = { vm.select(it); screen = "detail" },
+            onEdit = { vm.select(it); detailReturn = "main"; screen = "detail" },
             onForm = { vm.select(it); formReturn = "main"; screen = "form" },
             onSettings = { screen = "settings" },
             onPatchHistory = { screen = "patches" },
             onCalendar = { screen = "calendar" },
+            onDataSheet = { screen = "datasheet" },
             onGuide = { showGuide = true }
         )
         "calendar" -> CalendarScreenV29(
             vm = vm,
             onBack = { screen = "main" },
-            onOpen = { vm.select(it); screen = "detail" }
+            onOpen = { vm.select(it); detailReturn = "calendar"; screen = "detail" }
+        )
+        "datasheet" -> DataSheetScreenV31(
+            vm = vm,
+            onBack = { screen = "main" },
+            onOpen = { vm.select(it); detailReturn = "datasheet"; screen = "detail" }
         )
         "ocr" -> OcrRegisterScreenV29(vm, onDone = { screen = "main" }, onCancel = { screen = "main" })
         "detail" -> vm.selected.collectAsStateWithLifecycle().value?.let {
             DetailScreen(
                 vm = vm,
                 c0 = it,
-                onBack = { screen = "main" },
+                onBack = { screen = detailReturn },
                 onForm = { formReturn = "detail"; screen = "form" },
                 onAttachment = { att -> viewingAttachment = att; screen = "attachment" }
             )
@@ -153,6 +161,8 @@ private fun UsageGuideDialogV29(onClose: () -> Unit) {
                 Text("6. 길안내는 물건 소재지 또는 소유자 주소를 고른 뒤 TMAP/카카오를 선택합니다.")
                 Text("7. 전화는 임차인·물건 소유자·채무자 중 저장된 번호를 선택합니다.")
                 Text("8. 캘린더에서는 월 전체 조사 일정을 한눈에 확인합니다.")
+                Text("9. 전체 데이터시트에서는 모든 연도의 저장 건을 필터링하고 화면 크기를 조절해 확인합니다.")
+                Text("10. 태블릿 가로 분할 화면에서는 지도 위 ‘지도 폭’ 버튼으로 지도 크기를 조절합니다.")
                 Text("조사의뢰서/원본과 지도는 두 번 터치 및 두 손가락 확대·축소를 지원합니다.", style = MaterialTheme.typography.bodySmall)
             }
         },
@@ -169,6 +179,7 @@ private fun MainScreenV29(
     onSettings: () -> Unit,
     onPatchHistory: () -> Unit,
     onCalendar: () -> Unit,
+    onDataSheet: () -> Unit,
     onGuide: () -> Unit
 ) {
     val cases by vm.cases.collectAsStateWithLifecycle()
@@ -183,6 +194,15 @@ private fun MainScreenV29(
     var navCase by remember { mutableStateOf<InvestigationCase?>(null) }
     var callCase by remember { mutableStateOf<InvestigationCase?>(null) }
     var nextAfterComplete by remember { mutableStateOf<InvestigationCase?>(null) }
+    val context = LocalContext.current
+    val layoutPrefs = remember(context) { context.getSharedPreferences("investigation_ui", Context.MODE_PRIVATE) }
+    var mapSizeLevel by rememberSaveable {
+        mutableIntStateOf(layoutPrefs.getInt("wide_map_size", MAP_SIZE_NORMAL_V31).coerceIn(MAP_SIZE_SMALL_V31, MAP_SIZE_LARGE_V31))
+    }
+    fun setMapSizeLevel(value: Int) {
+        mapSizeLevel = value.coerceIn(MAP_SIZE_SMALL_V31, MAP_SIZE_LARGE_V31)
+        layoutPrefs.edit().putInt("wide_map_size", mapSizeLevel).apply()
+    }
     val configuration = LocalConfiguration.current
     // Fold 펼침/일반 태블릿을 단순 600dp로 구분하지 않는다.
     // 960dp 이상인 충분히 넓은 창에서만 좌우 2분할하고, 그 외에는 일정/지도 단일 화면을 사용한다.
@@ -284,6 +304,7 @@ private fun MainScreenV29(
                         TextButton(onClick = { moreMenu = true }) { Text("⋮", style = MaterialTheme.typography.titleLarge) }
                         DropdownMenu(expanded = moreMenu, onDismissRequest = { moreMenu = false }) {
                             DropdownMenuItem(text = { Text("캘린더") }, onClick = { moreMenu = false; onCalendar() })
+                            DropdownMenuItem(text = { Text("전체 데이터시트") }, onClick = { moreMenu = false; onDataSheet() })
                             DropdownMenuItem(text = { Text("사용방법") }, onClick = { moreMenu = false; onGuide() })
                             DropdownMenuItem(text = { Text("패치내역") }, onClick = { moreMenu = false; onPatchHistory() })
                             DropdownMenuItem(text = { Text("데이터 관리") }, onClick = { moreMenu = false; onSettings() })
@@ -359,15 +380,19 @@ private fun MainScreenV29(
             }
 
             if (wide) {
-                val listWidth = (maxWidth * .40f).coerceIn(400.dp, 520.dp)
+                val maximumMapWidth = (maxWidth - 400.dp - 1.dp).coerceAtLeast(320.dp)
+                val mapWidth = (maxWidth * MAP_WIDTH_FRACTIONS_V31[mapSizeLevel])
+                    .coerceIn(320.dp, maximumMapWidth)
                 Row(Modifier.fillMaxSize()) {
-                    listPane(Modifier.width(listWidth).fillMaxHeight())
+                    listPane(Modifier.weight(1f).fillMaxHeight())
                     VerticalDivider()
                     NativeMapPaneV29(
                         items = mapItems,
                         selected = selected,
                         onNavigate = { navCase = it },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.width(mapWidth).fillMaxHeight(),
+                        mapSizeLevel = mapSizeLevel,
+                        onMapSizeLevel = ::setMapSizeLevel
                     )
                 }
             } else {
@@ -1168,6 +1193,10 @@ private const val FILTER_WEEK_V29 = "이번주"
 private const val FILTER_UNASSIGNED_V29 = "미지정"
 private const val FILTER_DELAYED_V29 = "지연"
 private const val NO_DATE_V29 = "__NO_DATE_V29__"
+private const val MAP_SIZE_SMALL_V31 = 0
+private const val MAP_SIZE_NORMAL_V31 = 1
+private const val MAP_SIZE_LARGE_V31 = 2
+private val MAP_WIDTH_FRACTIONS_V31 = listOf(.38f, .50f, .60f)
 private val displayDateFormatterV29 = DateTimeFormatter.ofPattern("M월 d일 (E)", Locale.KOREAN)
 private val timestampFormatterV29 = DateTimeFormatter.ofPattern("M/d HH:mm", Locale.KOREAN)
 
