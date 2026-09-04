@@ -58,8 +58,8 @@ fun RequestDocumentView(c: InvestigationCase, modifier: Modifier = Modifier) {
         Spacer(Modifier.height(7.dp))
         Row(Modifier.fillMaxWidth()) {
             Text("○조사담당자 : ${c.investigator}", modifier = Modifier.weight(1.2f), style = docText())
-            Text("Tel) -", modifier = Modifier.weight(.8f), style = docText(), textAlign = TextAlign.Center)
-            Text("Fax) -", modifier = Modifier.weight(.8f), style = docText(), textAlign = TextAlign.End)
+            Text("Tel) ${fieldOrDash(c.investigatorPhone)}", modifier = Modifier.weight(.8f), style = docText(), textAlign = TextAlign.Center)
+            Text("Fax) ${fieldOrDash(c.investigatorFax)}", modifier = Modifier.weight(.8f), style = docText(), textAlign = TextAlign.End)
         }
 
         SectionTitle("1. 대 상 자")
@@ -142,7 +142,7 @@ fun RequestDocumentView(c: InvestigationCase, modifier: Modifier = Modifier) {
             Column(Modifier.weight(.92f)) {
                 FooterLine("▷농협영업점 : ${c.branch}")
                 FooterLine("▷조사의뢰자 : ${c.requester}")
-                FooterLine("▷전 화 번 호 : -        팩스: -")
+                FooterLine("▷전 화 번 호 : ${fieldOrDash(c.branchPhone)}        팩스: ${fieldOrDash(c.branchFax)}")
                 FooterLine("▷신  청  인 : 농협자산관리회사", bold = true)
             }
         }
@@ -205,6 +205,7 @@ private fun FooterLine(text: String, bold: Boolean = false) {
 }
 
 private fun docText() = TextStyle(color = Color.Black, fontSize = 11.sp)
+private fun fieldOrDash(value: String) = value.ifBlank { "-" }
 
 private fun ownerDisplay(c: InvestigationCase): String = buildString {
     append(c.ownerName)

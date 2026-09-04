@@ -21,8 +21,16 @@ object ArchiveService {
             bytes("data/cases.json",gson.toJson(cases).toByteArray())
             bytes("data/attachments.json",gson.toJson(atts).toByteArray())
             val csv=buildString {
-                appendLine("id,관리번호,의뢰일,채무자,완료요청일,물건소재지,상태,비고")
-                cases.forEach{c-> appendLine(listOf(c.id,c.managementNo,c.requestDate,c.debtorName,c.dueDate,c.propertyAddress,c.status,c.investigationMemo).joinToString(","){v->"\"${v.toString().replace("\"","\"\"")}\""}) }
+                appendLine("id,관리번호,의뢰일,조사담당자,담당자전화,담당자Fax,채무자,완료요청일,물건소재지,영업점,영업점전화,영업점Fax,조사의뢰자,상태,비고")
+                cases.forEach{c->
+                    appendLine(
+                        listOf(
+                            c.id,c.managementNo,c.requestDate,c.investigator,c.investigatorPhone,c.investigatorFax,
+                            c.debtorName,c.dueDate,c.propertyAddress,c.branch,c.branchPhone,c.branchFax,c.requester,
+                            c.status,c.investigationMemo
+                        ).joinToString(","){v->"\"${v.toString().replace("\"","\"\"")}\""}
+                    )
+                }
             }
             bytes("data/조사목록.csv",csv.toByteArray())
             val manifest=StringBuilder("path,sha256,size\n")

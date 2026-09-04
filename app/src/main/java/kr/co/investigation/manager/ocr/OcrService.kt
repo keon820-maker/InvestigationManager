@@ -35,7 +35,8 @@ object OcrService {
 
         val footer = FooterOcrRepair.repair(context, uri, base)
         val notes = NotesOcrRepair.repair(context, uri, footer)
-        return CommonResultRepair.repair(notes)
+        val common = CommonResultRepair.repair(notes)
+        return ContactInfoRepair.repair(common)
     }
 
     private fun looksLikeAppScreenshot(text: String): Boolean {

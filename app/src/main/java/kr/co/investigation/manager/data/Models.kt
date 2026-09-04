@@ -10,6 +10,8 @@ data class InvestigationCase(
     val managementNo: String = "",
     val requestDate: String = "",
     val investigator: String = "",
+    val investigatorPhone: String = "",
+    val investigatorFax: String = "",
     val debtorName: String = "",
     val phone: String = "",
     val mobile: String = "",
@@ -27,6 +29,8 @@ data class InvestigationCase(
     val tenantsJson: String = "[]",
     val requestNotes: String = "",
     val branch: String = "",
+    val branchPhone: String = "",
+    val branchFax: String = "",
     val requester: String = "",
     val investigationMemo: String = "",
     val status: String = "신규",
@@ -71,14 +75,27 @@ interface AttachmentDao {
     @Query("DELETE FROM attachments WHERE caseId=:caseId") suspend fun deleteForCase(caseId:Long)
 }
 
-@Database(entities=[InvestigationCase::class, Attachment::class], version=1, exportSchema=false)
+@Database(entities=[InvestigationCase::class, Attachment::class], version=2, exportSchema=false)
 abstract class AppDb: RoomDatabase() {
     abstract fun cases():CaseDao
     abstract fun attachments():AttachmentDao
     companion object {
         @Volatile private var instance:AppDb?=null
+
+        private val MIGRATION_1_2 = object: androidx.room.migration.Migration(1, 2) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE cases ADD COLUMN investigatorPhone TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE cases ADD COLUMN investigatorFax TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE cases ADD COLUMN branchPhone TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE cases ADD COLUMN branchFax TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun get(context:android.content.Context):AppDb = instance ?: synchronized(this) {
-            instance ?: Room.databaseBuilder(context.applicationContext, AppDb::class.java, "investigation.db").build().also{instance=it}
+            instance ?: Room.databaseBuilder(context.applicationContext, AppDb::class.java, "investigation.db")
+                .addMigrations(MIGRATION_1_2)
+                .build()
+                .also{instance=it}
         }
     }
 }
