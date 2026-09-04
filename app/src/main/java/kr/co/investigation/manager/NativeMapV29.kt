@@ -14,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -37,7 +38,9 @@ fun NativeMapPaneV29(
     items: List<InvestigationCase>,
     selected: InvestigationCase?,
     onNavigate: (InvestigationCase) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    mapSizeLevel: Int? = null,
+    onMapSizeLevel: (Int) -> Unit = {}
 ) {
     val context = LocalContext.current
     var viewportKey by remember { mutableStateOf("") }
@@ -54,6 +57,8 @@ fun NativeMapPaneV29(
     val mapView = remember {
         Configuration.getInstance().userAgentValue = context.packageName
         MapView(context).apply {
+            clipChildren = true
+            clipToPadding = true
             setTileSource(TileSourceFactory.MAPNIK)
             setMultiTouchControls(true)
             setTilesScaledToDpi(true)
@@ -71,10 +76,10 @@ fun NativeMapPaneV29(
         }
     }
 
-    Box(modifier = modifier) {
+    Box(modifier = modifier.clipToBounds()) {
         AndroidView(
             factory = { mapView },
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().clipToBounds(),
             update = { map ->
                 map.overlays.removeAll(map.overlays.filterIsInstance<Marker>())
 
@@ -151,6 +156,35 @@ fun NativeMapPaneV29(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+
+        mapSizeLevel?.let { level ->
+            val safeLevel = level.coerceIn(0, 2)
+            val labels = listOf("작게", "보통", "크게")
+            Surface(
+                modifier = Modifier.align(Alignment.BottomStart).padding(10.dp),
+                tonalElevation = 5.dp,
+                shadowElevation = 3.dp,
+                shape = MaterialTheme.shapes.large
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 5.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("지도 폭", style = MaterialTheme.typography.labelMedium)
+                    TextButton(
+                        onClick = { onMapSizeLevel(safeLevel - 1) },
+                        enabled = safeLevel > 0,
+                        contentPadding = PaddingValues(horizontal = 9.dp, vertical = 2.dp)
+                    ) { Text("−", style = MaterialTheme.typography.titleMedium) }
+                    Text(labels[safeLevel], style = MaterialTheme.typography.labelLarge)
+                    TextButton(
+                        onClick = { onMapSizeLevel(safeLevel + 1) },
+                        enabled = safeLevel < 2,
+                        contentPadding = PaddingValues(horizontal = 9.dp, vertical = 2.dp)
+                    ) { Text("＋", style = MaterialTheme.typography.titleMedium) }
+                }
             }
         }
     }

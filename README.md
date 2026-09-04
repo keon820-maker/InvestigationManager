@@ -4,7 +4,7 @@ Galaxy Tab S11 실사용, Galaxy Z Fold7 테스트를 기준으로 만든 조사
 
 ## 현재 버전
 
-- v0.7.0
+- v0.31.0
 - Android minSdk 28 / targetSdk 35
 - Kotlin + Jetpack Compose + Room
 - ML Kit 한국어 OCR + OpenCV 문서 보정
@@ -13,8 +13,10 @@ Galaxy Tab S11 실사용, Galaxy Z Fold7 테스트를 기준으로 만든 조사
 
 - 조사의뢰서 사진 선택 → 문서 외곽 검출/원근 보정 → OCR → 항목 자동 추출 → 검수/수정 → 저장
 - 고정 양식 특성을 활용한 표/행/문맥 기반 OCR 파싱
-- 넓은 화면: 좌측 조사 리스트 + 우측 지도
+- 넓은 화면: 좌측 조사 리스트 + 우측 지도, 지도 폭 작게/보통/크게 조절
 - 좁은 화면: 목록/지도 탭 자동 전환
+- 모든 연도와 완료 건을 포함하는 별도 전체 데이터시트
+- 데이터시트 검색·연도·진행도·일정 필터 및 70~160% 버튼/핀치 확대축소
 - `물건소재지`를 기준으로 지도 마커 표시
 - 상세 화면에서 조사 비고 기록
 - 조사확인서 갤러리 첨부 및 카메라 촬영
@@ -49,7 +51,7 @@ Galaxy Tab S11 실사용, Galaxy Z Fold7 테스트를 기준으로 만든 조사
 
 ## 지도
 
-지도는 OpenStreetMap/Leaflet을 사용합니다. 별도 Google Maps API Key는 필요하지 않습니다. 주소→좌표 변환은 Android `Geocoder`를 사용합니다.
+지도는 OpenStreetMap/osmdroid를 사용합니다. 별도 Google Maps API Key는 필요하지 않습니다. 주소→좌표 변환은 Android `Geocoder`를 사용합니다. 대체 지도 검토 내용은 `docs/MAP_PROVIDER_REVIEW_V31.md`를 참고하세요.
 
 ## 보안/개인정보
 

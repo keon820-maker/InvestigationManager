@@ -13,8 +13,8 @@ android {
         applicationId = "kr.co.investigation.manager"
         minSdk = 28
         targetSdk = 35
-        versionCode = 30
-        versionName = "0.30.0"
+        versionCode = 31
+        versionName = "0.31.0"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
