@@ -3,7 +3,7 @@ package kr.co.investigation.manager.data
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
 
-@Entity(tableName = "cases", indices = [Index("year"), Index("managementNo"), Index("propertyAddress")])
+@Entity(tableName = "cases", indices = [Index("year"), Index("managementNo"), Index("propertyAddress"), Index("plannedDate")])
 data class InvestigationCase(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val year: Int,
@@ -16,6 +16,7 @@ data class InvestigationCase(
     val phone: String = "",
     val mobile: String = "",
     val dueDate: String = "",
+    val plannedDate: String = "",
     val investigationType: String = "",
     val loanType: String = "",
     val propertyType: String = "",
@@ -56,7 +57,7 @@ data class Attachment(
 
 @Dao
 interface CaseDao {
-    @Query("SELECT * FROM cases WHERE year=:year ORDER BY dueDate ASC, id DESC") fun observeYear(year:Int): Flow<List<InvestigationCase>>
+    @Query("SELECT * FROM cases WHERE year=:year ORDER BY CASE WHEN plannedDate='' THEN 1 ELSE 0 END ASC, plannedDate ASC, dueDate ASC, id DESC") fun observeYear(year:Int): Flow<List<InvestigationCase>>
     @Query("SELECT * FROM cases WHERE id=:id") suspend fun get(id:Long): InvestigationCase?
     @Query("SELECT * FROM cases WHERE year=:year") suspend fun getYear(year:Int): List<InvestigationCase>
     @Insert suspend fun insert(value:InvestigationCase):Long
@@ -75,7 +76,7 @@ interface AttachmentDao {
     @Query("DELETE FROM attachments WHERE caseId=:caseId") suspend fun deleteForCase(caseId:Long)
 }
 
-@Database(entities=[InvestigationCase::class, Attachment::class], version=2, exportSchema=false)
+@Database(entities=[InvestigationCase::class, Attachment::class], version=3, exportSchema=false)
 abstract class AppDb: RoomDatabase() {
     abstract fun cases():CaseDao
     abstract fun attachments():AttachmentDao
@@ -91,9 +92,16 @@ abstract class AppDb: RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object: androidx.room.migration.Migration(2, 3) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE cases ADD COLUMN plannedDate TEXT NOT NULL DEFAULT ''")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_cases_plannedDate ON cases(plannedDate)")
+            }
+        }
+
         fun get(context:android.content.Context):AppDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, AppDb::class.java, "investigation.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
                 .also{instance=it}
         }
