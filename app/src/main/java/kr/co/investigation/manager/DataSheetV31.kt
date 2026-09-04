@@ -196,14 +196,15 @@ fun DataSheetScreenV31(
                         .fillMaxSize()
                         .pointerInput(Unit) {
                             awaitEachGesture {
-                                do {
+                                while (true) {
                                     val event = awaitPointerEvent()
                                     if (event.changes.count { it.pressed } >= 2) {
                                         val zoomChange = event.calculateZoom()
                                         if (zoomChange != 1f) changeZoom(zoom * zoomChange)
                                         event.changes.forEach { it.consume() }
                                     }
-                                } while (event.changes.any { it.pressed })
+                                    if (event.changes.all { !it.pressed }) break
+                                }
                             }
                         }
                         .horizontalScroll(horizontalState)
