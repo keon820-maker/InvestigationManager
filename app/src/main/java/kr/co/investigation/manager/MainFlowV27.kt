@@ -61,7 +61,11 @@ fun InvestigationAppV27(vm: AppViewModel) {
     }
 
     BackHandler(enabled = true) {
-        if (screen == "main") confirmExit = true else goBack()
+        when {
+            confirmExit -> confirmExit = false
+            screen == "main" -> confirmExit = true
+            else -> goBack()
+        }
     }
 
     if (confirmExit) {
@@ -160,7 +164,7 @@ private fun MainScreenV27(
                     Column {
                         Text("조사 일정", fontWeight = FontWeight.SemiBold)
                         Text(
-                            "$year년 · ${plannedDateDisplayV27(today)}",
+                            "${year}년 · ${plannedDateDisplayV27(today)}",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
