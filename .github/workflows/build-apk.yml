@@ -10,7 +10,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: android-build-${{ github.ref }}
@@ -49,10 +49,45 @@ jobs:
       - name: Build Debug APK
         run: gradle assembleDebug
 
-      - name: Upload APK
-        if: github.event_name != 'pull_request'
+      - name: Prepare versioned APK
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(sed -n 's/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)
+          if [ -z "$VERSION" ]; then
+            echo "Unable to read versionName from app/build.gradle.kts"
+            exit 1
+          fi
+          APK_NAME="InvestigationManager-v${VERSION}-debug.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$APK_NAME"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "apk_name=$APK_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK artifact
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: InvestigationManager-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: InvestigationManager-v${{ steps.version.outputs.version }}-debug-apk
+          path: ${{ steps.version.outputs.apk_name }}
           retention-days: 14
+
+      - name: Publish GitHub Release APK
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="v${{ steps.version.outputs.version }}"
+          APK="${{ steps.version.outputs.apk_name }}"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" --clobber
+          else
+            gh release create "$TAG" "$APK" \
+              --target "$GITHUB_SHA" \
+              --title "InvestigationManager $TAG" \
+              --generate-notes
+          fi
