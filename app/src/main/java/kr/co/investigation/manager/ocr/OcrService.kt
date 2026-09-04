@@ -35,7 +35,8 @@ object OcrService {
         val notes = NotesOcrRepair.repair(context, uri, footer)
         val common = CommonResultRepair.repair(notes)
         val contacts = ContactInfoRepair.repair(common)
-        return HeaderContactOcrRepair.repair(context, uri, contacts)
+        val header = HeaderContactOcrRepair.repair(context, uri, contacts)
+        return StructuredFieldOcrRepair.repair(context, uri, header)
     }
 
     private fun looksLikeAppScreenshot(text: String): Boolean {

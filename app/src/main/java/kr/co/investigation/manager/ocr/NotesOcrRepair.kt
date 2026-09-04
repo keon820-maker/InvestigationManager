@@ -40,8 +40,6 @@ object NotesOcrRepair {
                 .sortedByDescending { score(it) }
             val best = candidates.firstOrNull().orEmpty()
 
-            // 전용 crop에서 날짜+요청 문장이 잡혔다면, 길이가 더 긴 전체 OCR 결과보다 우선한다.
-            // 전체 OCR은 표의 보증금/월임차료/소유자 셀까지 뒤에 붙어 점수가 오르는 문제가 있었다.
             val fixedNotes = when {
                 isDedicatedNotes(best) -> best
                 best.isNotBlank() && score(best) > score(base.parsed.requestNotes) -> best
@@ -51,10 +49,10 @@ object NotesOcrRepair {
             if (fixedNotes == base.parsed.requestNotes) base else base.copy(
                 parsed = base.parsed.copy(requestNotes = fixedNotes),
                 rawText = base.rawText + buildString {
-                    append("\n\n--- 기타요청사항 재검증 v0.18 ---\n")
+                    append("\n\n--- 기타요청사항 재검증 v0.23 ---\n")
                     append("확정 : ").append(fixedNotes.replace('\n', ' ')).append('\n')
                 },
-                preprocessMessage = base.preprocessMessage + " / 기타요청사항 전용 OCR v0.18"
+                preprocessMessage = base.preprocessMessage + " / 기타요청사항 전용 OCR v0.23"
             )
         } finally {
             if (!crop.isRecycled) crop.recycle()
@@ -78,13 +76,13 @@ object NotesOcrRepair {
         val dateIndex = lines.indexOfFirst { Regex("\\b\\d{1,2}\\s*/\\s*\\d{1,2}\\b").containsMatchIn(it) }
         val start = when {
             dateIndex >= 0 -> dateIndex
-            else -> lines.indexOfFirst { it.contains("대출실행") || it.contains("현장조사") }
+            else -> lines.indexOfFirst { it.contains("대출실행") || it.contains("현장조사") || it.contains("방문") }
         }
         if (start < 0) return ""
 
         val selected = lines.drop(start)
             .takeWhile { line -> !isForeignFormRow(line) }
-            .take(7)
+            .take(10)
             .joinToString("\n")
 
         return clean(selected).take(700)
@@ -92,20 +90,16 @@ object NotesOcrRepair {
 
     private fun isForeignFormRow(line: String): Boolean {
         val c = line.replace(Regex("\\s+"), "")
+        // 보증금/월임차료는 실제 기타요청사항 안에 들어갈 수 있으므로 제외하지 않는다.
         return listOf(
-            "농협영업점", "조사의뢰자", "전화번호", "신청인", "보증금", "월임차료",
-            "물건소유자", "주민번호", "소유자주소", "팩스"
+            "농협영업점", "조사의뢰자", "신청인", "물건소유자", "주민번호", "소유자주소", "팩스"
         ).any { c.contains(it) }
     }
 
     private fun clean(value: String): String {
         var s = value.trim()
-        s = s.replace(
-            Regex("\\s*(?:보증금|증금)\\s*[:：]?\\s*[^\\n]{0,20}?(?:월\\s*임차료|임차료)\\s*[:：]?\\s*[^\\n]{0,20}$"),
-            ""
-        )
-        s = s.replace(Regex("\\s*(?:보증금|증금)\\s*[:：]?\\s*[0Oo이Il|]?\\s*$"), "")
-        s = s.replace(Regex("\\s*(?:월\\s*임차료|임차료)\\s*[:：]?\\s*[0Oo이Il|]?\\s*$"), "")
+        s = s.replace(Regex("(^|\\s)증금\\s*[:：]"), "$1보증금:")
+        s = s.replace(Regex("월\\s*임차료\\s*[:：]?"), "월임차료:")
         s = s.replace(Regex("([.!?])(?=[가-힣])"), "$1 ")
         s = s.replace(Regex("부탁드리며(?=채무자)"), "부탁드리며 ")
         s = s.lines().joinToString("\n") { it.trim() }.trim()
@@ -123,10 +117,10 @@ object NotesOcrRepair {
         if (value.contains("대출실행")) s += 4
         if (value.contains("현장조사")) s += 3
         if (value.contains("방문")) s += 2
-        s += (value.length / 40).coerceAtMost(4)
+        if (value.contains("보증금")) s += 3
+        if (value.contains("월임차료")) s += 3
+        s += (value.length / 40).coerceAtMost(5)
         if (value.contains("기타요청사항")) s -= 3
-        if (value.contains("보증금")) s -= 5
-        if (value.contains("월임차료")) s -= 5
         if (value.contains("물건소유자")) s -= 5
         return s
     }
