@@ -10,16 +10,17 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.calculateZoom
 import kr.co.investigation.manager.data.InvestigationCase
 import kotlin.math.roundToInt
 
-/**
- * 실제 조사의뢰서 레이아웃을 축소/확대하면서 확인하는 화면.
- * 기본 배율은 현재 화면 폭에 맞추고, +/- 및 화면맞춤으로 35~200% 범위를 조절한다.
- */
+/** 조사의뢰서 조회: 버튼 확대/축소 + 두 손가락 핀치 확대/축소. */
 @Composable
 fun ZoomableRequestDocument(c: InvestigationCase, modifier: Modifier = Modifier) {
     BoxWithConstraints(modifier.fillMaxSize()) {
@@ -56,6 +57,22 @@ fun ZoomableRequestDocument(c: InvestigationCase, modifier: Modifier = Modifier)
                     .weight(1f)
                     .fillMaxWidth()
                     .background(Color(0xFFECECEC))
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val pressed = event.changes.count { it.pressed }
+                                if (pressed >= 2) {
+                                    val zoomChange = event.calculateZoom()
+                                    if (zoomChange.isFinite() && zoomChange > 0f) {
+                                        zoom = (zoom * zoomChange).coerceIn(0.35f, 2f)
+                                    }
+                                    event.changes.forEach { it.consume() }
+                                }
+                                if (event.changes.all { !it.pressed }) break
+                            }
+                        }
+                    }
             ) {
                 Column(
                     Modifier

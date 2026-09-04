@@ -17,8 +17,6 @@ object OcrService {
     suspend fun recognizeCase(context: Context, uri: Uri): OcrResult {
         val base = AdaptiveOcr.recognizeCase(context, uri)
 
-        // 사용자가 직전 OCR 결과 화면 캡처를 다시 선택하는 실수를 막는다.
-        // 실제 조사의뢰서에는 아래 앱 UI 문구가 여러 개 동시에 존재할 수 없다.
         if (looksLikeAppScreenshot(base.rawText)) {
             return OcrResult(
                 rawText = buildString {
@@ -36,7 +34,8 @@ object OcrService {
         val footer = FooterOcrRepair.repair(context, uri, base)
         val notes = NotesOcrRepair.repair(context, uri, footer)
         val common = CommonResultRepair.repair(notes)
-        return ContactInfoRepair.repair(common)
+        val contacts = ContactInfoRepair.repair(common)
+        return HeaderContactOcrRepair.repair(context, uri, contacts)
     }
 
     private fun looksLikeAppScreenshot(text: String): Boolean {
@@ -52,8 +51,7 @@ object OcrService {
         return markers.count { text.contains(it, ignoreCase = true) } >= 2
     }
 
-    suspend fun recognize(context: Context, uri: Uri): String =
-        recognizeCase(context, uri).rawText
+    suspend fun recognize(context: Context, uri: Uri): String = recognizeCase(context, uri).rawText
 
     fun parse(text: String): InvestigationCase = FixedTemplateOcr.parseFallback(text)
 }
