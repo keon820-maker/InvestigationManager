@@ -4,7 +4,7 @@ Galaxy Tab S11 실사용, Galaxy Z Fold7 테스트를 기준으로 만든 조사
 
 ## 현재 버전
 
-- v0.31.0
+- v0.32.0
 - Android minSdk 28 / targetSdk 35
 - Kotlin + Jetpack Compose + Room
 - ML Kit 한국어 OCR + OpenCV 문서 보정
@@ -51,7 +51,7 @@ Galaxy Tab S11 실사용, Galaxy Z Fold7 테스트를 기준으로 만든 조사
 
 ## 지도
 
-지도는 OpenStreetMap/osmdroid를 사용합니다. 별도 Google Maps API Key는 필요하지 않습니다. 주소→좌표 변환은 Android `Geocoder`를 사용합니다. 대체 지도 검토 내용은 `docs/MAP_PROVIDER_REVIEW_V31.md`를 참고하세요.
+화면 지도는 Kakao Maps SDK v2를 사용합니다. 진행중 조사건의 방문순서·채무자·관리번호 마커와 선택 위치 이동, 전체 위치 맞춤, 태블릿 지도 폭 조절을 지원합니다. 주소→좌표 변환은 현재 Android `Geocoder`를 유지하며, 카카오 Local 주소검색 연동은 별도 단계로 검토합니다.
 
 ## 보안/개인정보
 
@@ -71,6 +71,6 @@ Galaxy Tab S11 실사용, Galaxy Z Fold7 테스트를 기준으로 만든 조사
 
 ## 빌드
 
-GitHub Actions의 `Build APK` 워크플로가 `main` 푸시와 Pull Request에서 자동 검증합니다. `main` 빌드에서는 `InvestigationManager-debug-apk` 아티팩트를 생성하며 보관 기간은 14일입니다.
+GitHub Actions의 `Build APK` 워크플로가 `main` 푸시와 Pull Request에서 자동 검증합니다. 카카오 Native App Key와 영구 APK 서명키는 GitHub Actions Repository Secrets에서만 주입되며 저장소에는 포함되지 않습니다. `main` 빌드에서는 버전이 표시된 APK 아티팩트와 GitHub Release를 생성합니다.
 
 Android Studio에서 직접 빌드하려면 JDK 17을 사용하세요.
