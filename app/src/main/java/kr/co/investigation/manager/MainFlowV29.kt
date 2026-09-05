@@ -163,6 +163,7 @@ private fun UsageGuideDialogV29(onClose: () -> Unit) {
                 Text("8. 캘린더에서는 월 전체 조사 일정을 한눈에 확인합니다.")
                 Text("9. 전체 데이터시트에서는 모든 연도의 저장 건을 필터링하고 화면 크기를 조절해 확인합니다.")
                 Text("10. 태블릿 가로 분할 화면에서는 지도 위 ‘지도 폭’ 버튼으로 지도 크기를 조절합니다.")
+                Text("11. 데이터 및 동기화에서 같은 Google 계정으로 로그인하면 조사 데이터와 원본이 기기 간 자동 동기화됩니다.")
                 Text("조사의뢰서/원본과 지도는 두 번 터치 및 두 손가락 확대·축소를 지원합니다.", style = MaterialTheme.typography.bodySmall)
             }
         },
@@ -307,7 +308,7 @@ private fun MainScreenV29(
                             DropdownMenuItem(text = { Text("전체 데이터시트") }, onClick = { moreMenu = false; onDataSheet() })
                             DropdownMenuItem(text = { Text("사용방법") }, onClick = { moreMenu = false; onGuide() })
                             DropdownMenuItem(text = { Text("패치내역") }, onClick = { moreMenu = false; onPatchHistory() })
-                            DropdownMenuItem(text = { Text("데이터 관리") }, onClick = { moreMenu = false; onSettings() })
+                            DropdownMenuItem(text = { Text("데이터·동기화") }, onClick = { moreMenu = false; onSettings() })
                         }
                     }
                 }
@@ -960,7 +961,7 @@ private fun OcrRegisterScreenV29(vm: AppViewModel, onDone: () -> Unit, onCancel:
         val id = vm.create(parsed.copy(status = parsed.status.normalizedStatusV29()))
         source?.let {
             val attachment = OriginalFileStore.copyOriginal(ctx, it, id, parsed.year, "ORIGINAL_REQUEST").attachment
-            vm.db.attachments().insert(attachment)
+            vm.addAttachment(attachment)
         }
         saving = false
         onDone()

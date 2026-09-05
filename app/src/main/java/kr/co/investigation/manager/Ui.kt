@@ -2,6 +2,7 @@
 
 package kr.co.investigation.manager
 
+import android.app.Activity
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -12,6 +13,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.platform.*
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -22,7 +25,10 @@ import kr.co.investigation.manager.ocr.OcrService
 import kr.co.investigation.manager.pdf.RequestPdf
 import kr.co.investigation.manager.storage.OriginalFileStore
 import java.io.File
+import java.text.SimpleDateFormat
 import java.time.LocalDate
+import java.util.Date
+import java.util.Locale
 
 @Composable fun InvestigationApp(vm:AppViewModel){
     var screen by remember{mutableStateOf("main")}
@@ -196,7 +202,7 @@ import java.time.LocalDate
                     val id=vm.create(parsed)
                     source?.let{
                         val a=OriginalFileStore.copyOriginal(ctx,it,id,parsed.year,"ORIGINAL_REQUEST").attachment
-                        vm.db.attachments().insert(a)
+                        vm.addAttachment(a)
                     }
                     onDone()
                 }}){Text("검수 완료 및 저장")}
@@ -254,15 +260,15 @@ import java.time.LocalDate
     val atts by vm.db.attachments().observe(c.id).collectAsStateWithLifecycle(emptyList())
     var pending by remember{mutableStateOf<File?>(null)}
     var confirmDelete by remember{mutableStateOf(false)}
-    val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()){u->if(u!=null)scope.launch{vm.db.attachments().insert(OriginalFileStore.copyOriginal(ctx,u,c.id,c.year,"CONFIRMATION").attachment)}}
+    val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()){u->if(u!=null)scope.launch{vm.addAttachment(OriginalFileStore.copyOriginal(ctx,u,c.id,c.year,"CONFIRMATION").attachment)}}
     val camera=rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()){ok->
         val f=pending
-        if(ok&&f!=null) scope.launch{vm.db.attachments().insert(OriginalFileStore.finalizeCamera(f,c.id,"CONFIRMATION").attachment)}
+        if(ok&&f!=null) scope.launch{vm.addAttachment(OriginalFileStore.finalizeCamera(f,c.id,"CONFIRMATION").attachment)}
     }
     if(confirmDelete) AlertDialog(
         onDismissRequest={confirmDelete=false},
         title={Text("조사건 삭제")},
-        text={Text("${c.managementNo.ifBlank{"이 조사건"}}을 삭제하시겠습니까?\n연결된 원본 조사의뢰서와 조사확인서 파일도 태블릿에서 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다.")},
+        text={Text("${c.managementNo.ifBlank{"이 조사건"}}을 휴지통으로 이동하시겠습니까?\n연결된 원본 조사의뢰서와 조사확인서는 유지되며 데이터 관리 화면에서 복구할 수 있습니다.")},
         confirmButton={Button(onClick={confirmDelete=false;scope.launch{vm.deleteCase(c);onBack()}}){Text("삭제")}},
         dismissButton={OutlinedButton(onClick={confirmDelete=false}){Text("취소")}}
     )
@@ -337,18 +343,91 @@ import java.time.LocalDate
     val ctx=LocalContext.current
     val scope=rememberCoroutineScope()
     val year by vm.year.collectAsStateWithLifecycle()
+    val sync by vm.cloudSync.collectAsStateWithLifecycle()
+    val deletedCases by vm.deletedCases.collectAsStateWithLifecycle()
     var msg by remember{mutableStateOf("")}
-    Scaffold(topBar={TopAppBar(title={Text("연도별 데이터 관리")},navigationIcon={TextButton(onClick=onBack){Text("뒤로")}})}){pad->
-        Column(Modifier.padding(pad).padding(20.dp)){
+    val lastSync = sync.lastSuccessAt?.let {
+        remember(it) { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.KOREA).format(Date(it)) }
+    }
+    Scaffold(topBar={TopAppBar(title={Text("데이터 및 동기화")},navigationIcon={TextButton(onClick=onBack){Text("뒤로")}})}){pad->
+        Column(
+            Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ){
+            Text("Google 계정 동기화", style=MaterialTheme.typography.titleLarge)
+            OutlinedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement=Arrangement.spacedBy(9.dp)) {
+                    when {
+                        !sync.configured -> {
+                            Text("연결 설정 필요", fontWeight=FontWeight.SemiBold)
+                            Text("현재 설치본에는 Firebase 연결 정보가 없습니다. 연결 설정이 포함된 APK에서 Google 로그인을 사용할 수 있습니다.", style=MaterialTheme.typography.bodySmall)
+                        }
+                        sync.account == null -> {
+                            Text("로그인되지 않음", fontWeight=FontWeight.SemiBold)
+                            Text("같은 Google 계정으로 로그인한 기기끼리 조사 데이터와 첨부 원본을 동기화합니다.", style=MaterialTheme.typography.bodySmall)
+                            Button(
+                                enabled=!sync.syncing && ctx is Activity,
+                                onClick={ (ctx as? Activity)?.let(vm::signIn) }
+                            ){Text("Google 계정으로 로그인")}
+                        }
+                        else -> {
+                            Text(sync.account?.displayName?.ifBlank { "Google 계정" }.orEmpty(), fontWeight=FontWeight.SemiBold)
+                            Text(sync.account?.email.orEmpty(), style=MaterialTheme.typography.bodySmall)
+                            if(lastSync!=null) Text("마지막 완료: $lastSync", style=MaterialTheme.typography.bodySmall)
+                            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                Button(enabled=!sync.syncing,onClick=vm::syncNow){Text("지금 동기화")}
+                                OutlinedButton(
+                                    enabled=!sync.syncing && ctx is Activity,
+                                    onClick={ (ctx as? Activity)?.let(vm::signOut) }
+                                ){Text("로그아웃")}
+                            }
+                        }
+                    }
+                    Row(verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                        if(sync.syncing) CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp)
+                        Text(sync.message, style=MaterialTheme.typography.bodySmall)
+                    }
+                    if(sync.lastSuccessAt!=null) {
+                        Text(
+                            "이번 동기화: 조사 업로드 ${sync.uploadedCases} · 다운로드 ${sync.downloadedCases} / 원본 업로드 ${sync.uploadedAttachments} · 다운로드 ${sync.downloadedAttachments}",
+                            style=MaterialTheme.typography.labelSmall
+                        )
+                    }
+                    Text(
+                        "로그인 후 변경사항은 자동 동기화됩니다. 통신 중에도 로컬 데이터가 기준으로 유지되며, 서버에는 해당 Google 계정의 UID 경로로만 저장됩니다.",
+                        style=MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+
+            Text("휴지통", style=MaterialTheme.typography.titleLarge)
+            Text("삭제한 조사건과 원본은 바로 지우지 않아 다른 기기에서 되살아나는 문제를 막고 필요할 때 복구할 수 있습니다.", style=MaterialTheme.typography.bodySmall)
+            if(deletedCases.isEmpty()) {
+                Text("휴지통이 비어 있습니다.", style=MaterialTheme.typography.bodySmall)
+            } else {
+                deletedCases.forEach { deleted ->
+                    OutlinedCard(Modifier.fillMaxWidth()) {
+                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment=Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(deleted.managementNo.ifBlank { deleted.debtorName.ifBlank { "조사건" } }, fontWeight=FontWeight.SemiBold)
+                                Text("${deleted.year}년 · ${deleted.propertyAddress}", style=MaterialTheme.typography.bodySmall, maxLines=2, overflow=TextOverflow.Ellipsis)
+                            }
+                            TextButton(onClick={vm.restoreCase(deleted)}){Text("복구")}
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider()
+            Text("연도별 내보내기", style=MaterialTheme.typography.titleLarge)
             Text("${year}년 데이터를 원본 사진의 해상도/바이트를 변경하지 않고 ZIP으로 묶습니다.")
-            Spacer(Modifier.height(12.dp))
             Button(onClick={scope.launch{
                 val r=ArchiveService.exportYear(ctx,vm.db,year)
                 msg="${r.cases}건 / 첨부 ${r.attachments}개 / 검증 ${if(r.verified)"완료" else "실패"}\n${r.file.absolutePath}"
             }}){Text("${year}년 데이터 내보내기")}
-            Spacer(Modifier.height(12.dp))
             Text("ZIP에는 DB JSON, CSV 목록, 모든 원본 파일, SHA-256 manifest가 포함됩니다. 검증 실패 시 원본을 삭제하지 마십시오.")
             if(msg.isNotBlank()) Text("\n$msg")
+            Spacer(Modifier.height(12.dp))
         }
     }
 }
