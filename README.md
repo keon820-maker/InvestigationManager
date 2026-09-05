@@ -27,6 +27,7 @@ Galaxy Tab S11 실사용, Galaxy Z Fold7 테스트를 기준으로 만든 조사
 - Cloud Firestore 조사 데이터 및 Cloud Storage 첨부 원본 동기화
 - SHA-256 검증 후 원본 업로드·다운로드
 - 삭제 건 휴지통 동기화 및 복구
+- 조사 문서와 위치 확인 표식을 반영한 전용 런처 아이콘
 
 ## 원본 증거자료 보존
 
