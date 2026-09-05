@@ -92,7 +92,9 @@ dependencies {
     implementation("com.google.code.gson:gson:2.11.0")
     implementation("com.kakao.maps.open:android:2.15.1")
 
-    implementation(platform("com.google.firebase:firebase-bom:34.18.0"))
+    // BoM 33.13 stays compatible with this app's Kotlin 2.0 compiler.
+    // Firebase Auth 24.x is built with newer Kotlin metadata and cannot be consumed safely here.
+    implementation(platform("com.google.firebase:firebase-bom:33.13.0"))
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
     implementation("com.google.firebase:firebase-storage")
