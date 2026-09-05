@@ -4,7 +4,7 @@ Galaxy Tab S11 실사용, Galaxy Z Fold7 테스트를 기준으로 만든 조사
 
 ## 현재 버전
 
-- v0.32.0
+- v0.33.0
 - Android minSdk 28 / targetSdk 35
 - Kotlin + Jetpack Compose + Room
 - ML Kit 한국어 OCR + OpenCV 문서 보정
@@ -23,6 +23,10 @@ Galaxy Tab S11 실사용, Galaxy Z Fold7 테스트를 기준으로 만든 조사
 - 조사건 삭제 시 연결된 로컬 첨부 원본도 함께 정리
 - 조사의뢰서 화면 재생성 및 A4 PDF 생성
 - 연도별 ZIP 아카이브 내보내기
+- 같은 Google 계정으로 여러 기기의 조사 데이터 자동 동기화
+- Cloud Firestore 조사 데이터 및 Cloud Storage 첨부 원본 동기화
+- SHA-256 검증 후 원본 업로드·다운로드
+- 삭제 건 휴지통 동기화 및 복구
 
 ## 원본 증거자료 보존
 
@@ -62,6 +66,8 @@ Galaxy Tab S11 실사용, Galaxy Z Fold7 테스트를 기준으로 만든 조사
 - FileProvider 공유 범위를 앱의 `originals/` 디렉터리로 제한
 - 공개 저장소에 실제 조사 문서/고객 데이터/연도별 내보내기 파일을 커밋하지 않도록 `.gitignore` 적용
 - GitHub Actions에서 키스토어·로컬 설정·APK/AAB가 추적되면 빌드 실패 처리
+- Firestore와 Storage는 로그인한 Firebase UID의 전용 경로만 읽고 쓸 수 있도록 규칙 제공
+- 기기의 기존 데이터는 최초 연결한 Google 계정에 고정해 다른 계정으로의 오업로드 차단
 
 자세한 내용은 `SECURITY.md`를 참고하세요.
 
@@ -69,8 +75,12 @@ Galaxy Tab S11 실사용, Galaxy Z Fold7 테스트를 기준으로 만든 조사
 
 저장소를 Public으로 전환하면 현재 파일뿐 아니라 과거 커밋과 남아 있는 브랜치의 이력도 공개될 수 있습니다. 실제 고객 데이터와 비밀키를 저장소에 올리지 마십시오. Git 작성자 이메일을 공개하고 싶지 않다면 GitHub noreply 이메일을 사용하도록 로컬 Git 설정을 변경하고, 이미 존재하는 과거 커밋 메타데이터는 필요 시 별도로 이력 재작성해야 합니다.
 
+## Google 계정 동기화
+
+Firebase 연결 절차, 데이터 경로, 충돌·삭제·복구 정책은 `docs/FIREBASE_SYNC_V33.md`에 정리되어 있습니다. 기존 로컬 DB와 원본 파일을 유지한 상태에서 서버 데이터를 먼저 비교하고, 첨부 원본은 파일 크기와 SHA-256 검증을 통과한 경우에만 반영합니다.
+
 ## 빌드
 
-GitHub Actions의 `Build APK` 워크플로가 `main` 푸시와 Pull Request에서 자동 검증합니다. 카카오 Native App Key와 영구 APK 서명키는 GitHub Actions Repository Secrets에서만 주입되며 저장소에는 포함되지 않습니다. `main` 빌드에서는 버전이 표시된 APK 아티팩트와 GitHub Release를 생성합니다.
+GitHub Actions의 `Build APK` 워크플로가 `main` 푸시와 Pull Request에서 자동 검증합니다. 카카오 Native App Key, Firebase 설정, 영구 APK 서명키는 GitHub Actions Repository Secrets에서만 주입되며 저장소에는 포함되지 않습니다. `main` 빌드에서는 버전이 표시된 APK 아티팩트와 GitHub Release를 생성합니다.
 
 Android Studio에서 직접 빌드하려면 JDK 17을 사용하세요.

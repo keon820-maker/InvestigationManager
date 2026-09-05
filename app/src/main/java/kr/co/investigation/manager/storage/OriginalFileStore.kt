@@ -33,6 +33,22 @@ object OriginalFileStore {
         return Saved(buildAttachment(final,caseId,type,"image/jpeg"))
     }
 
+    fun cloudDestination(
+        context: Context,
+        year: Int,
+        caseId: Long,
+        cloudId: String,
+        originalName: String
+    ): File {
+        val dir = File(context.filesDir, "originals/$year/$caseId").apply { mkdirs() }
+        val extension = originalName.substringAfterLast('.', "")
+            .lowercase()
+            .filter { it.isLetterOrDigit() }
+            .take(10)
+        val name = if (extension.isBlank()) "cloud_$cloudId" else "cloud_$cloudId.$extension"
+        return File(dir, name)
+    }
+
     private fun buildAttachment(file:File,caseId:Long,type:String,mime:String):Attachment {
         val opts=BitmapFactory.Options().apply{inJustDecodeBounds=true}
         BitmapFactory.decodeFile(file.absolutePath,opts)
