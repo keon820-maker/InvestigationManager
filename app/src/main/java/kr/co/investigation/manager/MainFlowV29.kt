@@ -44,7 +44,7 @@ import java.time.temporal.ChronoUnit
 import java.util.Locale
 import kotlin.math.*
 
-/** v0.31: 조절 가능한 태블릿 지도 영역 + 전체 데이터시트. */
+/** v0.32: 카카오맵 + 조절 가능한 태블릿 지도 영역 + 전체 데이터시트. */
 @Composable
 fun InvestigationAppV29(vm: AppViewModel) {
     val context = LocalContext.current
@@ -157,7 +157,7 @@ private fun UsageGuideDialogV29(onClose: () -> Unit) {
                 Text("2. OCR 결과를 확인하고 조사 예정일과 진행도를 지정합니다.")
                 Text("3. 일정 화면의 오늘/내일/이번주 필터로 방문할 건을 확인합니다.")
                 Text("4. 같은 날짜의 ‘동선’ 버튼에서 방문순서를 정하거나 거리순 자동정렬합니다.")
-                Text("5. 진행중 건은 지도에 표시되며 마커의 간단정보로 대상을 구분할 수 있습니다.")
+                Text("5. 진행중 건은 카카오맵에 표시되며 마커의 간단정보로 대상을 구분할 수 있습니다.")
                 Text("6. 길안내는 물건 소재지 또는 소유자 주소를 고른 뒤 TMAP/카카오를 선택합니다.")
                 Text("7. 전화는 임차인·물건 소유자·채무자 중 저장된 번호를 선택합니다.")
                 Text("8. 캘린더에서는 월 전체 조사 일정을 한눈에 확인합니다.")

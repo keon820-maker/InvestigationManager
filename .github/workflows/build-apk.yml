@@ -46,8 +46,61 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build Debug APK
-        run: gradle assembleDebug
+      - name: Prepare permanent signing key
+        shell: bash
+        env:
+          SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${SIGNING_KEYSTORE_BASE64:?Missing SIGNING_KEYSTORE_BASE64 repository secret}"
+          : "${SIGNING_STORE_PASSWORD:?Missing SIGNING_STORE_PASSWORD repository secret}"
+
+          KEYSTORE_PATH="$RUNNER_TEMP/InvestigationManager-release.keystore"
+          printf '%s' "$SIGNING_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          chmod 600 "$KEYSTORE_PATH"
+
+          keytool -list \
+            -keystore "$KEYSTORE_PATH" \
+            -storetype PKCS12 \
+            -storepass "$SIGNING_STORE_PASSWORD" \
+            -alias investigationmanager >/dev/null
+
+          KEY_HASH=$(keytool -exportcert \
+            -keystore "$KEYSTORE_PATH" \
+            -storetype PKCS12 \
+            -storepass "$SIGNING_STORE_PASSWORD" \
+            -alias investigationmanager | openssl sha1 -binary | openssl base64 -A)
+          if [ "$KEY_HASH" != 'axBO/Il7LuxDRi9BOYgOPopVbus=' ]; then
+            echo "The signing certificate does not match the Kakao key hash."
+            exit 1
+          fi
+
+          echo "SIGNING_KEYSTORE_FILE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+
+      - name: Build permanently signed Debug APK
+        shell: bash
+        env:
+          KAKAO_NATIVE_APP_KEY: ${{ secrets.KAKAO_NATIVE_APP_KEY }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${KAKAO_NATIVE_APP_KEY:?Missing KAKAO_NATIVE_APP_KEY repository secret}"
+          gradle assembleDebug
+
+      - name: Verify APK signing certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+          "$APKSIGNER" verify --verbose --print-certs app/build/outputs/apk/debug/app-debug.apk
+          ACTUAL_SHA256=$("$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk \
+            | sed -n 's/^.*certificate SHA-256 digest: //p' | head -n 1)
+          EXPECTED_SHA256='4a8e4dcbabe21943c0377c2bec150d5d98f70a4ec8d74a35b11fe7382d7984dd'
+          if [ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]; then
+            echo "APK was not signed with the permanent InvestigationManager key."
+            exit 1
+          fi
 
       - name: Prepare versioned APK
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'

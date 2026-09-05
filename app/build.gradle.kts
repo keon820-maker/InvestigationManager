@@ -5,6 +5,11 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+val kakaoNativeAppKey = providers.environmentVariable("KAKAO_NATIVE_APP_KEY").orNull.orEmpty()
+val signingKeystoreFile = providers.environmentVariable("SIGNING_KEYSTORE_FILE").orNull
+val signingStorePassword = providers.environmentVariable("SIGNING_STORE_PASSWORD").orNull
+val hasPermanentSigning = !signingKeystoreFile.isNullOrBlank() && !signingStorePassword.isNullOrBlank()
+
 android {
     namespace = "kr.co.investigation.manager"
     compileSdk = 35
@@ -13,15 +18,35 @@ android {
         applicationId = "kr.co.investigation.manager"
         minSdk = 28
         targetSdk = 35
-        versionCode = 31
-        versionName = "0.31.0"
+        versionCode = 32
+        versionName = "0.32.0"
+        buildConfigField("String", "KAKAO_NATIVE_APP_KEY", "\"$kakaoNativeAppKey\"")
+    }
+    signingConfigs {
+        if (hasPermanentSigning) {
+            create("permanent") {
+                storeFile = file(signingKeystoreFile!!)
+                storePassword = signingStorePassword
+                keyAlias = "investigationmanager"
+                keyPassword = signingStorePassword
+                storeType = "PKCS12"
+            }
+        }
+    }
+    buildTypes {
+        getByName("debug") {
+            if (hasPermanentSigning) signingConfig = signingConfigs.getByName("permanent")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
 }
 
@@ -44,5 +69,5 @@ dependencies {
     implementation("org.opencv:opencv:4.10.0")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("com.google.code.gson:gson:2.11.0")
-    implementation("org.osmdroid:osmdroid-android:6.1.20")
+    implementation("com.kakao.maps.open:android:2.15.1")
 }
