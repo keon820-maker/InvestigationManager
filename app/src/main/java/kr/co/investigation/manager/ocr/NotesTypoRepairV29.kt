@@ -52,12 +52,18 @@ object NotesTypoRepairV29 {
             // OCR raw+enhanced 결합 과정에서 중간에 끼어드는 깨진 '기타요청사항' 라벨 제거.
             .filterNot(::looksLikeNotesHeader)
 
-        // raw/enhanced 두 패스가 같은 메모를 연속으로 붙이는 경우가 있어,
-        // 오기 보정 후 동일해진 행은 첫 번째 것만 남긴다.
-        val unique = linkedSetOf<String>()
-        cleaned.forEach { line -> unique += line }
-        return unique.joinToString("\n").trim()
+        // raw/enhanced 두 패스가 같은 메모를 연속으로 붙이는 경우가 있다.
+        // 종결점/띄어쓰기 차이만 있는 행도 같은 행으로 보고 첫 번째 결과를 유지한다.
+        val unique = linkedMapOf<String, String>()
+        cleaned.forEach { line ->
+            unique.putIfAbsent(canonicalLine(line), line)
+        }
+        return unique.values.joinToString("\n").trim()
     }
+
+    private fun canonicalLine(line: String): String = line
+        .replace(Regex("[\\s.,!?·ㆍ:：]+"), "")
+        .trim()
 
     private fun looksLikeNotesHeader(line: String): Boolean {
         val c = line.replace(Regex("[^가-힣]"), "")
