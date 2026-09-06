@@ -51,10 +51,10 @@ jobs:
           cores: 4
           emulator-options: >-
             -no-snapshot -no-window -gpu swiftshader_indirect -noaudio
-            -no-boot-anim -camera-back none
+            -no-boot-anim -camera-back none -no-metrics
           disable-animations: true
           script: |
-            set -euo pipefail
+            set -eu
             mkdir -p tablet-test-artifacts
 
             gradle -PincludeEmulatorAbi=true assembleDebug
@@ -67,7 +67,8 @@ jobs:
             adb shell settings put system user_rotation 0
             adb shell am force-stop kr.co.investigation.manager
             adb shell am start -W -n kr.co.investigation.manager/.MainActivity \
-              | tee tablet-test-artifacts/launch-portrait.txt
+              > tablet-test-artifacts/launch-portrait.txt
+            cat tablet-test-artifacts/launch-portrait.txt
             sleep 5
             adb shell pidof kr.co.investigation.manager
             adb exec-out screencap -p > tablet-test-artifacts/portrait.png
@@ -77,13 +78,15 @@ jobs:
             adb shell pidof kr.co.investigation.manager
             adb exec-out screencap -p > tablet-test-artifacts/landscape.png
 
-            adb shell dumpsys window windows \
-              | grep -E 'mCurrentFocus|mFocusedApp' \
-              | tee tablet-test-artifacts/focused-window.txt
+            adb shell dumpsys window windows > tablet-test-artifacts/window-dump.txt
+            grep -E 'mCurrentFocus|mFocusedApp' tablet-test-artifacts/window-dump.txt \
+              > tablet-test-artifacts/focused-window.txt
+            cat tablet-test-artifacts/focused-window.txt
             grep -q 'kr.co.investigation.manager' tablet-test-artifacts/focused-window.txt
             adb logcat -d -t 500 > tablet-test-artifacts/logcat.txt
             file tablet-test-artifacts/portrait.png tablet-test-artifacts/landscape.png \
-              | tee tablet-test-artifacts/screenshot-sizes.txt
+              > tablet-test-artifacts/screenshot-sizes.txt
+            cat tablet-test-artifacts/screenshot-sizes.txt
 
       - name: Upload tablet test evidence
         if: always()
