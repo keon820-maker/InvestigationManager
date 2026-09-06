@@ -1083,7 +1083,7 @@ private fun OcrRegisterScreenV29(vm: AppViewModel, onDone: () -> Unit, onCancel:
                 }
             }
             Spacer(Modifier.height(10.dp))
-            EditFields(parsed, { parsed = profile.applyTo(it) }, fixedInvestigator = true)
+            EditFields(parsed, fixedInvestigator = true) { parsed = profile.applyTo(it) }
             PlannedDateFieldV29(parsed.plannedDate) { parsed = parsed.copy(plannedDate = it) }
             StatusChoiceV29(parsed.status) { parsed = parsed.copy(status = it) }
             Spacer(Modifier.height(14.dp))

@@ -221,8 +221,8 @@ import java.util.Locale
 
 @Composable fun EditFields(
     c:InvestigationCase,
-    on:(InvestigationCase)->Unit,
-    fixedInvestigator:Boolean=false
+    fixedInvestigator:Boolean=false,
+    on:(InvestigationCase)->Unit
 ){
     @Composable fun f(label:String,v:String,set:(String)->InvestigationCase){
         OutlinedTextField(v,{on(set(it))},label={Text(label)},modifier=Modifier.fillMaxWidth().padding(vertical=3.dp))
@@ -398,7 +398,7 @@ import java.util.Locale
     )
     Scaffold(topBar={TopAppBar(title={Text(c.managementNo.ifBlank{"상세정보"})},navigationIcon={TextButton(onClick=onBack){Text("뒤로")}},actions={TextButton(onClick=onForm){Text("조사의뢰서")}})}){pad->
         Column(Modifier.padding(pad).verticalScroll(rememberScrollState()).padding(16.dp)){
-            EditFields(c,{c=profile.applyTo(it)},fixedInvestigator=true)
+            EditFields(c,fixedInvestigator=true){c=profile.applyTo(it)}
             OutlinedTextField(c.investigationMemo,{c=c.copy(investigationMemo=it)},label={Text("조사 비고")},minLines=4,modifier=Modifier.fillMaxWidth())
             Row(Modifier.padding(vertical=10.dp)){
                 Button(onClick={chooseDefaultAddress=true}){Text("변경 저장")}
