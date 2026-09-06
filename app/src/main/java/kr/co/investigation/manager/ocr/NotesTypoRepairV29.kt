@@ -10,11 +10,11 @@ object NotesTypoRepairV29 {
         return base.copy(
             parsed = base.parsed.copy(requestNotes = after),
             rawText = base.rawText + buildString {
-                append("\n\n--- 기타요청사항 오기 보정 v0.35.4 ---\n")
+                append("\n\n--- 기타요청사항 오기 보정 v0.35.6 ---\n")
                 append("보정 전 : ").append(before.replace('\n', ' ')).append('\n')
                 append("보정 후 : ").append(after.replace('\n', ' ')).append('\n')
             },
-            preprocessMessage = base.preprocessMessage + " / 기타요청사항 최종 중복·오기 보정 v0.35.4"
+            preprocessMessage = base.preprocessMessage + " / 기타요청사항 최종 중복·오기 보정 v0.35.6"
         )
     }
 
@@ -30,6 +30,8 @@ object NotesTypoRepairV29 {
             Regex("제\\s*무\\s*자") to "채무자",
             Regex("현장\\s*조시") to "현장조사",
             Regex("임대차\\s*현장\\s*조시") to "임대차현장조사",
+            // 실기기에서 '임대차조사'가 '임데치조시'처럼 모음/받침 단위로 흔들린 경우.
+            Regex("임\\s*[대데]\\s*[차치]\\s*조\\s*[사시]") to "임대차조사",
             Regex("연락\\s*후\\s*방문") to "연락 후 방문",
             Regex("사전\\s*통화\\s*후\\s*방문") to "사전 통화 후 방문",
             // 실사진에서 '확'이 '흑'으로 읽히는 경우. '입주 사실' 문맥으로만 한정한다.
@@ -51,7 +53,7 @@ object NotesTypoRepairV29 {
             .filter { it.isNotBlank() }
 
         // raw/enhanced OCR가 두 번 이어 붙는 경우 두 번째 블록 앞에
-        // '기타요청사항' 라벨(예: 기타요최시환, 기e요최시환)이 다시 나타난다.
+        // '기타요청사항' 라벨(예: 기타요최시환, 기e요최시환, E. 기요침 사항)이 다시 나타난다.
         // 이미 본문을 하나 이상 확보한 뒤 라벨이 재등장하면 그 뒤는 중복 OCR 블록으로 보고 버린다.
         val cleaned = mutableListOf<String>()
         for (line in sourceLines) {
@@ -76,14 +78,17 @@ object NotesTypoRepairV29 {
 
     private fun looksLikeNotesHeader(line: String): Boolean {
         val compact = line.replace(Regex("[^가-힣A-Za-z0-9]"), "")
-        val hangul = compact.replace(Regex("[^가-힣]"), "")
+        val withoutSectionMarker = compact.replace(Regex("^[A-Za-z0-9]{1,2}(?=기)"), "")
+        val hangul = withoutSectionMarker.replace(Regex("[^가-힣]"), "")
         if (hangul == "기타요청사항") return true
 
-        // '기타요최시환', '기e요최시환'처럼 한두 글자가 깨진 짧은 라벨만 허용한다.
+        // 한두 글자가 깨진 짧은 라벨만 허용한다. 'E. 기요침 사항'처럼
+        // 앞의 3./E. 같은 섹션 표식이 문자로 잘못 읽힌 경우도 제거한다.
         // 일반 메모 문장이 잘리는 것을 막기 위해 짧은 독립 행에만 적용한다.
-        return compact.length in 5..12 && compact.startsWith("기") &&
-            (compact.contains("요최시") || compact.contains("요청사") ||
+        return withoutSectionMarker.length in 4..12 && withoutSectionMarker.startsWith("기") &&
+            (withoutSectionMarker.contains("요최시") || withoutSectionMarker.contains("요청사") ||
+                withoutSectionMarker.contains("요침사") || withoutSectionMarker.contains("요시환") ||
                 hangul.contains("요최시") || hangul.contains("요청사") ||
-                hangul.contains("요시환"))
+                hangul.contains("요침사") || hangul.contains("요시환"))
     }
 }
