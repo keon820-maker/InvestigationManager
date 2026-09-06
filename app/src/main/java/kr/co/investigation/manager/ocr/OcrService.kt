@@ -52,7 +52,9 @@ object OcrService {
             val targetTenant = TargetTenantOcrRepair.repair(alignedDocument, structured)
             val tenants = TenantResultSanitizer.repair(targetTenant)
             val final = FinalOcrRepairV26.repair(alignedDocument, tenants)
-            excludeInvestigator(NotesTypoRepairV29.repair(final))
+            val notesFixed = NotesTypoRepairV29.repair(final)
+            val addressFixed = AddressTypoRepairV355.repair(notesFixed)
+            excludeInvestigator(addressFixed)
         } finally {
             if (alignedDocument.bitmap !== normalizedDocument.bitmap && !alignedDocument.bitmap.isRecycled) {
                 alignedDocument.bitmap.recycle()
