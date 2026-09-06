@@ -77,7 +77,7 @@ object FinalOcrRepairV26 {
             )
 
             finish(base, fixed, buildString {
-                append("\n\n--- 최종 중요필드 보정 v0.26 ---\n")
+                append("\n\n--- 최종 중요필드 보정 v0.35.2 ---\n")
                 append("관리번호 확정 : ").append(fixed.managementNo).append('\n')
                 append("영업점 영역 : ").append(footerFocus.replace('\n', ' ').take(900)).append('\n')
                 append("영업점 확정 : ").append(fixed.branch).append('\n')
@@ -95,7 +95,7 @@ object FinalOcrRepairV26 {
         return base.copy(
             parsed = fixed,
             rawText = base.rawText + debug,
-            preprocessMessage = if (debug.isBlank()) base.preprocessMessage else base.preprocessMessage + " / 최종 중요필드 보정 v0.26"
+            preprocessMessage = if (debug.isBlank()) base.preprocessMessage else base.preprocessMessage + " / 최종 중요필드 보정 v0.35.2"
         )
     }
 
@@ -199,15 +199,29 @@ object FinalOcrRepairV26 {
         .replace('I', '1')
         .replace('L', '1')
 
-    private val phonePattern = Regex("\\(?0\\d{1,2}\\)?[- .]?\\d{3,4}[- .]?\\d{4}")
+    // 02, 3자리 지역번호, 050x 서비스번호까지 허용한다.
+    private val phonePattern = Regex("\\(?0\\d{1,3}\\)?[- .]?\\d{3,4}[- .]?\\d{4}")
+    private val threeDigitPrefixes = setOf(
+        "031", "032", "033", "041", "042", "043", "044",
+        "051", "052", "053", "054", "055", "061", "062", "063", "064",
+        "070", "080"
+    )
 
     private fun normalizePhone(value: String): String {
         val d = value.filter(Char::isDigit)
         return when {
-            d.length == 11 && d.startsWith("01") -> "${d.substring(0, 3)}-${d.substring(3, 7)}-${d.substring(7)}"
-            d.length == 10 && d.startsWith("02") -> "02-${d.substring(2, 6)}-${d.substring(6)}"
-            d.length == 10 -> "${d.substring(0, 3)}-${d.substring(3, 6)}-${d.substring(6)}"
-            d.length == 9 && d.startsWith("02") -> "02-${d.substring(2, 5)}-${d.substring(5)}"
+            d.length == 12 && d.startsWith("050") ->
+                "${d.substring(0, 4)}-${d.substring(4, 8)}-${d.substring(8)}"
+            d.length == 11 && d.startsWith("01") ->
+                "${d.substring(0, 3)}-${d.substring(3, 7)}-${d.substring(7)}"
+            d.length == 11 && d.substring(0, 3) in threeDigitPrefixes ->
+                "${d.substring(0, 3)}-${d.substring(3, 7)}-${d.substring(7)}"
+            d.length == 10 && d.startsWith("02") ->
+                "02-${d.substring(2, 6)}-${d.substring(6)}"
+            d.length == 10 && d.substring(0, 3) in threeDigitPrefixes ->
+                "${d.substring(0, 3)}-${d.substring(3, 6)}-${d.substring(6)}"
+            d.length == 9 && d.startsWith("02") ->
+                "02-${d.substring(2, 5)}-${d.substring(5)}"
             else -> ""
         }
     }
