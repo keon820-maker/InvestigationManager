@@ -66,8 +66,7 @@ jobs:
 
             adb shell settings put system user_rotation 0
             adb shell am force-stop kr.co.investigation.manager
-            adb shell am start -W -n kr.co.investigation.manager/.MainActivity \
-              > tablet-test-artifacts/launch-portrait.txt
+            adb shell am start -W -n kr.co.investigation.manager/.MainActivity > tablet-test-artifacts/launch-portrait.txt
             cat tablet-test-artifacts/launch-portrait.txt
             sleep 5
             adb shell pidof kr.co.investigation.manager
@@ -79,13 +78,11 @@ jobs:
             adb exec-out screencap -p > tablet-test-artifacts/landscape.png
 
             adb shell dumpsys window windows > tablet-test-artifacts/window-dump.txt
-            grep -E 'mCurrentFocus|mFocusedApp' tablet-test-artifacts/window-dump.txt \
-              > tablet-test-artifacts/focused-window.txt
+            grep -E 'mCurrentFocus|mFocusedApp' tablet-test-artifacts/window-dump.txt > tablet-test-artifacts/focused-window.txt
             cat tablet-test-artifacts/focused-window.txt
             grep -q 'kr.co.investigation.manager' tablet-test-artifacts/focused-window.txt
             adb logcat -d -t 500 > tablet-test-artifacts/logcat.txt
-            file tablet-test-artifacts/portrait.png tablet-test-artifacts/landscape.png \
-              > tablet-test-artifacts/screenshot-sizes.txt
+            file tablet-test-artifacts/portrait.png tablet-test-artifacts/landscape.png > tablet-test-artifacts/screenshot-sizes.txt
             cat tablet-test-artifacts/screenshot-sizes.txt
 
       - name: Upload tablet test evidence
