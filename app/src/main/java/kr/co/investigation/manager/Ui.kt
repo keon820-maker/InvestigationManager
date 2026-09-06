@@ -219,23 +219,38 @@ import java.util.Locale
     }
 }
 
-@Composable fun EditFields(c:InvestigationCase,on:(InvestigationCase)->Unit){
+@Composable fun EditFields(
+    c:InvestigationCase,
+    on:(InvestigationCase)->Unit,
+    fixedInvestigator:Boolean=false
+){
     @Composable fun f(label:String,v:String,set:(String)->InvestigationCase){
         OutlinedTextField(v,{on(set(it))},label={Text(label)},modifier=Modifier.fillMaxWidth().padding(vertical=3.dp))
     }
     f("관리번호",c.managementNo){c.copy(managementNo=it)}
     f("의뢰일",c.requestDate){c.copy(requestDate=it)}
-    f("조사담당자",c.investigator){c.copy(investigator=it)}
-    f("조사담당자 전화",c.investigatorPhone){c.copy(investigatorPhone=it)}
-    f("조사담당자 Fax",c.investigatorFax){c.copy(investigatorFax=it)}
-    f("채무자명",c.debtorName){c.copy(debtorName=it)}
+    if(fixedInvestigator){
+        OutlinedCard(Modifier.fillMaxWidth().padding(vertical=3.dp)){
+            Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(3.dp)){
+                Text("고정 조사담당자",style=MaterialTheme.typography.labelLarge)
+                Text(c.investigator.ifBlank{"기기 설정 필요"})
+                if(c.investigatorPhone.isNotBlank()) Text(c.investigatorPhone,style=MaterialTheme.typography.bodySmall)
+                Text("OCR에서 읽지 않고 이 기기에 저장된 설정을 적용합니다.",style=MaterialTheme.typography.labelSmall)
+            }
+        }
+    }else{
+        f("조사담당자",c.investigator){c.copy(investigator=it)}
+        f("조사담당자 전화",c.investigatorPhone){c.copy(investigatorPhone=it)}
+        f("조사담당자 Fax",c.investigatorFax){c.copy(investigatorFax=it)}
+    }
+    f("채무자(생년월일 포함)",c.debtorName){c.copy(debtorName=it)}
     f("전화번호",c.phone){c.copy(phone=it)}
     f("핸드폰번호",c.mobile){c.copy(mobile=it)}
     f("완료요청일",c.dueDate){c.copy(dueDate=it)}
     f("조사구분",c.investigationType){c.copy(investigationType=it)}
     f("대출종류",c.loanType){c.copy(loanType=it)}
     f("물건종류",c.propertyType){c.copy(propertyType=it)}
-    f("물건소재지 (지도 기준)",c.propertyAddress){c.copy(propertyAddress=it)}
+    f("임차인 주소(물건 소재지)",c.propertyAddress){c.copy(propertyAddress=it)}
     f("물건소유자",c.ownerName){c.copy(ownerName=it)}
     f("주민번호",c.ownerResidentNo){c.copy(ownerResidentNo=it)}
     f("소유자 연락처",c.ownerPhone){c.copy(ownerPhone=it)}
@@ -247,6 +262,91 @@ import java.util.Locale
     f("조사의뢰자",c.requester){c.copy(requester=it)}
 }
 
+@Composable fun InvestigatorProfileDialog(
+    initial:InvestigatorProfile,
+    onDismiss:()->Unit,
+    onSave:(InvestigatorProfile)->Unit
+){
+    var name by remember(initial){mutableStateOf(initial.name)}
+    var phone by remember(initial){mutableStateOf(initial.phone)}
+    val candidate=InvestigatorProfile(name,phone)
+    AlertDialog(
+        onDismissRequest=onDismiss,
+        title={Text("고정 조사담당자 설정")},
+        text={
+            Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
+                Text("한 번 저장하면 신규 등록과 편집에 같은 담당자를 적용하며, 문서의 담당자 영역은 OCR하지 않습니다.",style=MaterialTheme.typography.bodySmall)
+                OutlinedTextField(name,{name=it},label={Text("담당자 이름")},singleLine=true,modifier=Modifier.fillMaxWidth())
+                OutlinedTextField(phone,{phone=it.filter(Char::isDigit).take(11)},label={Text("담당자 전화번호")},singleLine=true,modifier=Modifier.fillMaxWidth())
+                Text("이 값은 앱 전용 기기 저장공간에 보관됩니다.",style=MaterialTheme.typography.labelSmall)
+            }
+        },
+        confirmButton={Button(enabled=candidate.isConfigured,onClick={onSave(candidate)}){Text("저장")}},
+        dismissButton={TextButton(onClick=onDismiss){Text("취소")}}
+    )
+}
+
+@Composable fun DefaultAddressChoiceDialog(
+    value:InvestigationCase,
+    onDismiss:()->Unit,
+    onSelect:(String)->Unit
+){
+    AlertDialog(
+        onDismissRequest=onDismiss,
+        title={Text("기본 주소지 선택")},
+        text={
+            Column(verticalArrangement=Arrangement.spacedBy(9.dp)){
+                Text("지도와 길안내에서 기본으로 사용할 주소를 선택하세요.",style=MaterialTheme.typography.bodySmall)
+                val tenantSelected=value.normalizedDefaultAddressType()==DEFAULT_ADDRESS_TENANT
+                val ownerSelected=value.normalizedDefaultAddressType()==DEFAULT_ADDRESS_OWNER
+                if(tenantSelected) Button(
+                    enabled=value.propertyAddress.isNotBlank(),
+                    onClick={onSelect(DEFAULT_ADDRESS_TENANT)},
+                    modifier=Modifier.fillMaxWidth()
+                ){
+                    Column(Modifier.fillMaxWidth()){
+                        Text("✓ 임차인 주소(물건 소재지)")
+                        Text(value.propertyAddress.ifBlank{"주소 없음"},style=MaterialTheme.typography.labelSmall,maxLines=2)
+                    }
+                } else OutlinedButton(
+                    enabled=value.propertyAddress.isNotBlank(),
+                    onClick={onSelect(DEFAULT_ADDRESS_TENANT)},
+                    modifier=Modifier.fillMaxWidth()
+                ){
+                    Column(Modifier.fillMaxWidth()){
+                        Text("임차인 주소(물건 소재지)")
+                        Text(value.propertyAddress.ifBlank{"주소 없음"},style=MaterialTheme.typography.labelSmall,maxLines=2)
+                    }
+                }
+                if(ownerSelected) Button(
+                    enabled=value.ownerAddress.isNotBlank(),
+                    onClick={onSelect(DEFAULT_ADDRESS_OWNER)},
+                    modifier=Modifier.fillMaxWidth()
+                ){
+                    Column(Modifier.fillMaxWidth()){
+                        Text("✓ 소유자 주소")
+                        Text(value.ownerAddress.ifBlank{"주소 없음"},style=MaterialTheme.typography.labelSmall,maxLines=2)
+                    }
+                } else OutlinedButton(
+                    enabled=value.ownerAddress.isNotBlank(),
+                    onClick={onSelect(DEFAULT_ADDRESS_OWNER)},
+                    modifier=Modifier.fillMaxWidth()
+                ){
+                    Column(Modifier.fillMaxWidth()){
+                        Text("소유자 주소")
+                        Text(value.ownerAddress.ifBlank{"주소 없음"},style=MaterialTheme.typography.labelSmall,maxLines=2)
+                    }
+                }
+                if(value.propertyAddress.isBlank() && value.ownerAddress.isBlank()){
+                    Text("주소를 먼저 입력해야 저장할 수 있습니다.",color=MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton={},
+        dismissButton={TextButton(onClick=onDismiss){Text("취소")}}
+    )
+}
+
 @Composable fun DetailScreen(
     vm:AppViewModel,
     c0:InvestigationCase,
@@ -256,15 +356,29 @@ import java.util.Locale
 ){
     val ctx=LocalContext.current
     val scope=rememberCoroutineScope()
-    var c by remember(c0){mutableStateOf(c0)}
+    var profile by remember(ctx){mutableStateOf(InvestigatorProfileStore.load(ctx))}
+    var c by remember(c0,profile){mutableStateOf(profile.applyTo(c0))}
     val atts by vm.db.attachments().observe(c.id).collectAsStateWithLifecycle(emptyList())
     var pending by remember{mutableStateOf<File?>(null)}
     var confirmDelete by remember{mutableStateOf(false)}
+    var chooseDefaultAddress by remember{mutableStateOf(false)}
+    var showInvestigatorProfile by remember{mutableStateOf(!profile.isConfigured)}
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()){u->if(u!=null)scope.launch{vm.addAttachment(OriginalFileStore.copyOriginal(ctx,u,c.id,c.year,"CONFIRMATION").attachment)}}
     val camera=rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()){ok->
         val f=pending
         if(ok&&f!=null) scope.launch{vm.addAttachment(OriginalFileStore.finalizeCamera(f,c.id,"CONFIRMATION").attachment)}
     }
+    if(showInvestigatorProfile) InvestigatorProfileDialog(
+        initial=profile,
+        onDismiss={showInvestigatorProfile=false},
+        onSave={value->
+            InvestigatorProfileStore.save(ctx,value)
+            profile=InvestigatorProfileStore.load(ctx)
+            c=profile.applyTo(c)
+            vm.applyInvestigatorProfile(profile)
+            showInvestigatorProfile=false
+        }
+    )
     if(confirmDelete) AlertDialog(
         onDismissRequest={confirmDelete=false},
         title={Text("조사건 삭제")},
@@ -272,12 +386,22 @@ import java.util.Locale
         confirmButton={Button(onClick={confirmDelete=false;scope.launch{vm.deleteCase(c);onBack()}}){Text("삭제")}},
         dismissButton={OutlinedButton(onClick={confirmDelete=false}){Text("취소")}}
     )
+    if(chooseDefaultAddress) DefaultAddressChoiceDialog(
+        value=c,
+        onDismiss={chooseDefaultAddress=false},
+        onSelect={kind->
+            chooseDefaultAddress=false
+            val updated=profile.applyTo(c.copy(defaultAddressType=kind))
+            c=updated
+            vm.update(updated)
+        }
+    )
     Scaffold(topBar={TopAppBar(title={Text(c.managementNo.ifBlank{"상세정보"})},navigationIcon={TextButton(onClick=onBack){Text("뒤로")}},actions={TextButton(onClick=onForm){Text("조사의뢰서")}})}){pad->
         Column(Modifier.padding(pad).verticalScroll(rememberScrollState()).padding(16.dp)){
-            EditFields(c){c=it}
+            EditFields(c,{c=profile.applyTo(it)},fixedInvestigator=true)
             OutlinedTextField(c.investigationMemo,{c=c.copy(investigationMemo=it)},label={Text("조사 비고")},minLines=4,modifier=Modifier.fillMaxWidth())
             Row(Modifier.padding(vertical=10.dp)){
-                Button(onClick={vm.update(c)}){Text("변경 저장")}
+                Button(onClick={chooseDefaultAddress=true}){Text("변경 저장")}
                 Spacer(Modifier.width(8.dp))
                 Button(onClick={picker.launch("image/*")}){Text("조사확인서 첨부")}
                 Spacer(Modifier.width(8.dp))
@@ -346,14 +470,42 @@ import java.util.Locale
     val sync by vm.cloudSync.collectAsStateWithLifecycle()
     val deletedCases by vm.deletedCases.collectAsStateWithLifecycle()
     var msg by remember{mutableStateOf("")}
+    var investigatorProfile by remember(ctx){mutableStateOf(InvestigatorProfileStore.load(ctx))}
+    var showInvestigatorProfile by remember{mutableStateOf(false)}
+    var exportMonth by remember(year){
+        mutableIntStateOf(if(year==LocalDate.now().year) LocalDate.now().monthValue else 1)
+    }
+    var monthMenu by remember{mutableStateOf(false)}
     val lastSync = sync.lastSuccessAt?.let {
         remember(it) { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.KOREA).format(Date(it)) }
     }
+    if(showInvestigatorProfile) InvestigatorProfileDialog(
+        initial=investigatorProfile,
+        onDismiss={showInvestigatorProfile=false},
+        onSave={profile->
+            InvestigatorProfileStore.save(ctx,profile)
+            investigatorProfile=InvestigatorProfileStore.load(ctx)
+            vm.applyInvestigatorProfile(investigatorProfile)
+            showInvestigatorProfile=false
+        }
+    )
     Scaffold(topBar={TopAppBar(title={Text("데이터 및 동기화")},navigationIcon={TextButton(onClick=onBack){Text("뒤로")}})}){pad->
         Column(
             Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ){
+            Text("고정 조사담당자",style=MaterialTheme.typography.titleLarge)
+            OutlinedCard(Modifier.fillMaxWidth()){
+                Row(Modifier.fillMaxWidth().padding(16.dp),verticalAlignment=Alignment.CenterVertically){
+                    Column(Modifier.weight(1f)){
+                        Text(investigatorProfile.name.ifBlank{"설정 필요"},fontWeight=FontWeight.SemiBold)
+                        if(investigatorProfile.phone.isNotBlank()) Text(investigatorProfile.phone,style=MaterialTheme.typography.bodySmall)
+                        Text("OCR 제외 · 기기 내부 설정",style=MaterialTheme.typography.labelSmall)
+                    }
+                    Button(onClick={showInvestigatorProfile=true}){Text(if(investigatorProfile.isConfigured)"변경" else "설정")}
+                }
+            }
+
             Text("Google 계정 동기화", style=MaterialTheme.typography.titleLarge)
             OutlinedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement=Arrangement.spacedBy(9.dp)) {
@@ -394,7 +546,7 @@ import java.util.Locale
                         )
                     }
                     Text(
-                        "로그인 후 변경사항은 자동 동기화됩니다. 통신 중에도 로컬 데이터가 기준으로 유지되며, 서버에는 해당 Google 계정의 UID 경로로만 저장됩니다.",
+                        "Google 로그인은 선택사항입니다. 로그인하지 않아도 OCR·등록·편집·월별 내보내기를 사용할 수 있습니다. 로그인한 경우에만 변경사항이 자동 동기화됩니다.",
                         style=MaterialTheme.typography.bodySmall
                     )
                 }
@@ -419,12 +571,23 @@ import java.util.Locale
             }
 
             HorizontalDivider()
-            Text("연도별 내보내기", style=MaterialTheme.typography.titleLarge)
-            Text("${year}년 데이터를 원본 사진의 해상도/바이트를 변경하지 않고 ZIP으로 묶습니다.")
+            Text("월별 내보내기", style=MaterialTheme.typography.titleLarge)
+            Text("의뢰일 기준으로 한 달 데이터를 원본 사진의 해상도/바이트를 변경하지 않고 ZIP으로 묶습니다. 의뢰일이 없으면 예정일, 둘 다 없으면 등록일을 사용합니다.")
+            Box{
+                OutlinedButton(onClick={monthMenu=true}){Text("${year}년 ${exportMonth}월 선택")}
+                DropdownMenu(expanded=monthMenu,onDismissRequest={monthMenu=false}){
+                    (1..12).forEach{month->
+                        DropdownMenuItem(
+                            text={Text("${year}년 ${month}월")},
+                            onClick={exportMonth=month;monthMenu=false}
+                        )
+                    }
+                }
+            }
             Button(onClick={scope.launch{
-                val r=ArchiveService.exportYear(ctx,vm.db,year)
+                val r=ArchiveService.exportMonth(ctx,vm.db,year,exportMonth)
                 msg="${r.cases}건 / 첨부 ${r.attachments}개 / 검증 ${if(r.verified)"완료" else "실패"}\n${r.file.absolutePath}"
-            }}){Text("${year}년 데이터 내보내기")}
+            }}){Text("${year}년 ${exportMonth}월 데이터 내보내기")}
             Text("ZIP에는 DB JSON, CSV 목록, 모든 원본 파일, SHA-256 manifest가 포함됩니다. 검증 실패 시 원본을 삭제하지 마십시오.")
             if(msg.isNotBlank()) Text("\n$msg")
             Spacer(Modifier.height(12.dp))

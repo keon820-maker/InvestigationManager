@@ -298,7 +298,7 @@ internal fun compareVersion(left: InvestigationCase, right: InvestigationCase): 
 }
 
 private fun InvestigationCase.toCloudMap(): Map<String, Any?> = mapOf(
-    "schemaVersion" to 1,
+    "schemaVersion" to 2,
     "year" to year,
     "managementNo" to managementNo,
     "requestDate" to requestDate,
@@ -321,6 +321,7 @@ private fun InvestigationCase.toCloudMap(): Map<String, Any?> = mapOf(
     "ownerResidentNo" to ownerResidentNo,
     "ownerPhone" to ownerPhone,
     "ownerAddress" to ownerAddress,
+    "defaultAddressType" to defaultAddressType,
     "tenantsJson" to tenantsJson,
     "requestNotes" to requestNotes,
     "branch" to branch,
@@ -380,6 +381,7 @@ private fun DocumentSnapshot.toInvestigationCase(): InvestigationCase {
         ownerResidentNo = data.string("ownerResidentNo"),
         ownerPhone = data.string("ownerPhone"),
         ownerAddress = data.string("ownerAddress"),
+        defaultAddressType = data.string("defaultAddressType", "TENANT"),
         tenantsJson = data.string("tenantsJson", "[]"),
         requestNotes = data.string("requestNotes"),
         branch = data.string("branch"),

@@ -34,6 +34,16 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - name: Reject private image fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          private_images=$(git ls-files 'app/src/test/**' 'app/src/androidTest/**' | grep -Ei '\.(jpe?g|png|heic|webp)$' || true)
+          if [ -n "$private_images" ]; then
+            echo "OCR tests must generate non-personal images at runtime; committed image fixtures are forbidden."
+            exit 1
+          fi
+
       - name: Enable KVM
         shell: bash
         run: |
@@ -58,7 +68,10 @@ jobs:
             set -eu
             mkdir -p tablet-test-artifacts
 
-            gradle -PincludeEmulatorAbi=true assembleDebug
+            gradle -PincludeEmulatorAbi=true testDebugUnitTest connectedDebugAndroidTest assembleDebug
+            if [ -d app/build/reports/androidTests/connected ]; then
+              cp -R app/build/reports/androidTests/connected tablet-test-artifacts/ocr-test-report
+            fi
             adb install -r app/build/outputs/apk/debug/app-debug.apk
 
             adb shell wm size 2560x1600

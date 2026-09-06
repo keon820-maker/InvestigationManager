@@ -86,6 +86,7 @@ fun DataSheetScreenV31(
             DataColumnV31("소유자", 115.dp) { it.ownerName },
             DataColumnV31("소유자 연락처", 140.dp) { it.ownerPhone },
             DataColumnV31("소유자 주소", 280.dp) { it.ownerAddress },
+            DataColumnV31("기본 주소지", 145.dp) { it.defaultAddressLabel() },
             DataColumnV31("조사 종류", 125.dp) { it.investigationType },
             DataColumnV31("대출 종류", 120.dp) { it.loanType },
             DataColumnV31("영업점", 135.dp) { it.branch },

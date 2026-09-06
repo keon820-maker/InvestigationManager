@@ -43,12 +43,13 @@ class AppViewModel(app:Application):AndroidViewModel(app){
         viewModelScope.launch {
             cases.collect { list ->
                 list.filter {
-                    it.propertyAddress.isNotBlank() &&
+                    it.defaultAddress().isNotBlank() &&
                         (it.propertyLatitude == null || it.propertyLongitude == null)
                 }.forEach { c ->
-                    val key = "${c.id}|${c.propertyAddress}"
+                    val address = c.defaultAddress()
+                    val key = "${c.id}|${c.normalizedDefaultAddressType()}|$address"
                     if (!geocodeAttempted.add(key)) return@forEach
-                    val xy = GeocoderService.resolve(getApplication(), c.propertyAddress)
+                    val xy = GeocoderService.resolve(getApplication(), address)
                     if (xy != null) {
                         val updated = c.copy(
                             propertyLatitude = xy.first,
@@ -75,7 +76,8 @@ class AppViewModel(app:Application):AndroidViewModel(app){
     fun select(c:InvestigationCase?){_selected.value=c}
 
     suspend fun create(c:InvestigationCase):Long {
-        val xy=GeocoderService.resolve(getApplication(),c.propertyAddress)
+        val xy=c.defaultAddress().takeIf { it.isNotBlank() }
+            ?.let { GeocoderService.resolve(getApplication(),it) }
         val now = System.currentTimeMillis()
         val id = db.cases().insert(
             c.copy(
@@ -93,10 +95,11 @@ class AppViewModel(app:Application):AndroidViewModel(app){
 
     fun update(c:InvestigationCase){
         viewModelScope.launch{
-            val xy=if(c.propertyAddress.isNotBlank()) GeocoderService.resolve(getApplication(),c.propertyAddress) else null
+            val xy=c.defaultAddress().takeIf { it.isNotBlank() }
+                ?.let { GeocoderService.resolve(getApplication(),it) }
             val updated=c.copy(
-                propertyLatitude=xy?.first?:c.propertyLatitude,
-                propertyLongitude=xy?.second?:c.propertyLongitude,
+                propertyLatitude=xy?.first,
+                propertyLongitude=xy?.second,
                 updatedAt=System.currentTimeMillis(),
                 cloudId = c.cloudId.ifBlank { UUID.randomUUID().toString() },
                 modifiedByDevice = syncIdentity.deviceId,
@@ -104,6 +107,25 @@ class AppViewModel(app:Application):AndroidViewModel(app){
             )
             db.cases().update(updated)
             _selected.value=updated
+            scheduleSync()
+        }
+    }
+
+    fun applyInvestigatorProfile(profile: InvestigatorProfile) {
+        if (!profile.isConfigured) return
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val updates = db.cases().getAllActive().map { current ->
+                profile.applyTo(current).copy(
+                    updatedAt = now,
+                    cloudId = current.cloudId.ifBlank { UUID.randomUUID().toString() },
+                    modifiedByDevice = syncIdentity.deviceId,
+                    lastSyncedAt = null
+                )
+            }
+            if (updates.isNotEmpty()) db.cases().updateAll(updates)
+            val selectedId = _selected.value?.id
+            if (selectedId != null) updates.firstOrNull { it.id == selectedId }?.let { _selected.value = it }
             scheduleSync()
         }
     }

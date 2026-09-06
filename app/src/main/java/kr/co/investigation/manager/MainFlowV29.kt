@@ -27,12 +27,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import kr.co.investigation.manager.data.Attachment
 import kr.co.investigation.manager.data.InvestigationCase
 import kr.co.investigation.manager.ocr.OcrService
 import kr.co.investigation.manager.storage.OriginalFileStore
+import java.io.File
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
@@ -152,13 +154,13 @@ private fun UsageGuideDialogV29(onClose: () -> Unit) {
                 Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(9.dp)
             ) {
-                Text("문서 → 일정 → 동선 → 지도/내비 → 조사 완료 순서로 사용합니다.", fontWeight = FontWeight.SemiBold)
-                Text("1. 신규 등록에서 종이 조사의뢰서를 촬영한 사진을 선택합니다.")
+                Text("문서 → 일정 → 동선 → 지도/내비 순서로 사용합니다.", fontWeight = FontWeight.SemiBold)
+                Text("1. 신규 등록에서 기존 사진을 선택하거나 카메라로 조사의뢰서를 촬영합니다.")
                 Text("2. OCR 결과를 확인하고 조사 예정일과 진행도를 지정합니다.")
                 Text("3. 일정 화면의 오늘/내일/이번주 필터로 방문할 건을 확인합니다.")
                 Text("4. 같은 날짜의 ‘동선’ 버튼에서 방문순서를 정하거나 거리순 자동정렬합니다.")
                 Text("5. 진행중 건은 카카오맵에 표시되며 마커의 간단정보로 대상을 구분할 수 있습니다.")
-                Text("6. 길안내는 물건 소재지 또는 소유자 주소를 고른 뒤 TMAP/카카오를 선택합니다.")
+                Text("6. 신규·편집 저장 때 임차인 주소(물건 소재지) 또는 소유자 주소 중 기본 주소를 지정합니다.")
                 Text("7. 전화는 임차인·물건 소유자·채무자 중 저장된 번호를 선택합니다.")
                 Text("8. 캘린더에서는 월 전체 조사 일정을 한눈에 확인합니다.")
                 Text("9. 전체 데이터시트에서는 모든 연도의 저장 건을 필터링하고 화면 크기를 조절해 확인합니다.")
@@ -194,7 +196,6 @@ private fun MainScreenV29(
     var routeDate by remember { mutableStateOf<String?>(null) }
     var navCase by remember { mutableStateOf<InvestigationCase?>(null) }
     var callCase by remember { mutableStateOf<InvestigationCase?>(null) }
-    var nextAfterComplete by remember { mutableStateOf<InvestigationCase?>(null) }
     val context = LocalContext.current
     val layoutPrefs = remember(context) { context.getSharedPreferences("investigation_ui", Context.MODE_PRIVATE) }
     var mapSizeLevel by rememberSaveable {
@@ -229,30 +230,6 @@ private fun MainScreenV29(
     callCase?.let { c ->
         PhoneChoiceDialogV29(c = c, onDismiss = { callCase = null })
     }
-    nextAfterComplete?.let { next ->
-        AlertDialog(
-            onDismissRequest = { nextAfterComplete = null },
-            title = { Text("다음 조사") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text("현재 건을 완료했습니다.")
-                    Text(
-                        buildString {
-                            if (next.routeOrder > 0) append("${next.routeOrder}번 · ")
-                            append(next.managementNo.ifBlank { next.debtorName })
-                        },
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(next.propertyAddress, style = MaterialTheme.typography.bodySmall)
-                }
-            },
-            confirmButton = {
-                Button(onClick = { nextAfterComplete = null; navCase = next }) { Text("다음 목적지 길안내") }
-            },
-            dismissButton = { TextButton(onClick = { nextAfterComplete = null }) { Text("나중에") } }
-        )
-    }
-
     val searched = remember(cases, query) {
         cases.filter { c ->
             query.isBlank() || listOf(
@@ -370,12 +347,6 @@ private fun MainScreenV29(
                     },
                     onSchedule = { c, date -> vm.update(c.copy(plannedDate = date, routeOrder = 0)) },
                     onRoute = { routeDate = it },
-                    onStart = { vm.startInvestigation(it) },
-                    onComplete = { c ->
-                        val next = nextCaseV29(cases, c)
-                        vm.completeInvestigation(c)
-                        nextAfterComplete = next
-                    },
                     modifier = modifier
                 )
             }
@@ -431,8 +402,6 @@ private fun SchedulePaneV29(
     onStatus: (InvestigationCase, String) -> Unit,
     onSchedule: (InvestigationCase, String) -> Unit,
     onRoute: (String) -> Unit,
-    onStart: (InvestigationCase) -> Unit,
-    onComplete: (InvestigationCase) -> Unit,
     modifier: Modifier
 ) {
     var menuCaseId by remember { mutableStateOf<Long?>(null) }
@@ -517,9 +486,7 @@ private fun SchedulePaneV29(
                             onSchedule = { menuCaseId = null; scheduleCase = c },
                             onStatusChip = { statusCase = c },
                             onNavigate = { onNavigate(c) },
-                            onCall = { onCall(c) },
-                            onStart = { onStart(c) },
-                            onComplete = { onComplete(c) }
+                            onCall = { onCall(c) }
                         )
                     }
                 }
@@ -594,9 +561,7 @@ private fun CaseCardV29(
     onSchedule: () -> Unit,
     onStatusChip: () -> Unit,
     onNavigate: () -> Unit,
-    onCall: () -> Unit,
-    onStart: () -> Unit,
-    onComplete: () -> Unit
+    onCall: () -> Unit
 ) {
     val status = c.status.normalizedStatusV29()
     val hasMarker = status == STATUS_IN_PROGRESS_V29 && c.propertyLatitude != null && c.propertyLongitude != null
@@ -630,9 +595,10 @@ private fun CaseCardV29(
                 }
             }
 
-            if (c.propertyAddress.isNotBlank()) {
+            if (c.defaultAddress().isNotBlank()) {
                 Spacer(Modifier.height(7.dp))
-                Text(c.propertyAddress, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(c.defaultAddressLabel(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                Text(c.defaultAddress(), style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             if (warnings.isNotEmpty()) {
                 Spacer(Modifier.height(6.dp))
@@ -662,10 +628,6 @@ private fun CaseCardV29(
                 TextButton(onClick = onForm, modifier = Modifier.weight(1f), contentPadding = PaddingValues(2.dp)) { Text("의뢰서") }
                 TextButton(onClick = onLocate, enabled = hasMarker, modifier = Modifier.weight(1f), contentPadding = PaddingValues(2.dp)) { Text("지도") }
                 TextButton(onClick = onNavigate, enabled = hasNav, modifier = Modifier.weight(1f), contentPadding = PaddingValues(2.dp)) { Text("길안내") }
-            }
-            when (status) {
-                STATUS_NEW_V29 -> FilledTonalButton(onClick = onStart, modifier = Modifier.fillMaxWidth()) { Text("조사 시작") }
-                STATUS_IN_PROGRESS_V29 -> Button(onClick = onComplete, modifier = Modifier.fillMaxWidth()) { Text("조사 완료") }
             }
         }
     }
@@ -707,18 +669,36 @@ private fun NavigationFlowDialogV29(c: InvestigationCase, onDismiss: () -> Unit)
                 if (target == null) {
                     Text("어느 주소로 이동할지 선택하세요.", style = MaterialTheme.typography.bodySmall)
                     if (c.propertyAddress.isNotBlank()) {
-                        FilledTonalButton(onClick = { resolve(false) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                            Column(Modifier.fillMaxWidth()) {
-                                Text("물건 소재지", fontWeight = FontWeight.SemiBold)
-                                Text(c.propertyAddress, style = MaterialTheme.typography.labelSmall)
+                        if (c.normalizedDefaultAddressType() == DEFAULT_ADDRESS_TENANT) {
+                            FilledTonalButton(onClick = { resolve(false) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.fillMaxWidth()) {
+                                    Text("✓ 기본 · 임차인 주소(물건 소재지)", fontWeight = FontWeight.SemiBold)
+                                    Text(c.propertyAddress, style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        } else {
+                            OutlinedButton(onClick = { resolve(false) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.fillMaxWidth()) {
+                                    Text("임차인 주소(물건 소재지)", fontWeight = FontWeight.SemiBold)
+                                    Text(c.propertyAddress, style = MaterialTheme.typography.labelSmall)
+                                }
                             }
                         }
                     }
                     if (c.ownerAddress.isNotBlank()) {
-                        OutlinedButton(onClick = { resolve(true) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                            Column(Modifier.fillMaxWidth()) {
-                                Text("소유자 주소", fontWeight = FontWeight.SemiBold)
-                                Text(c.ownerAddress, style = MaterialTheme.typography.labelSmall)
+                        if (c.normalizedDefaultAddressType() == DEFAULT_ADDRESS_OWNER) {
+                            FilledTonalButton(onClick = { resolve(true) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.fillMaxWidth()) {
+                                    Text("✓ 기본 · 소유자 주소", fontWeight = FontWeight.SemiBold)
+                                    Text(c.ownerAddress, style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        } else {
+                            OutlinedButton(onClick = { resolve(true) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.fillMaxWidth()) {
+                                    Text("소유자 주소", fontWeight = FontWeight.SemiBold)
+                                    Text(c.ownerAddress, style = MaterialTheme.typography.labelSmall)
+                                }
                             }
                         }
                     }
@@ -947,25 +927,92 @@ private fun CalendarGridV29(
 private fun OcrRegisterScreenV29(vm: AppViewModel, onDone: () -> Unit, onCancel: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
+    var profile by remember(ctx) { mutableStateOf(InvestigatorProfileStore.load(ctx)) }
+    var showProfileDialog by remember { mutableStateOf(!profile.isConfigured) }
     var raw by remember { mutableStateOf("") }
     var showRaw by remember { mutableStateOf(false) }
     var parsed by remember { mutableStateOf(InvestigationCase(year = LocalDate.now().year)) }
     var busy by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var source by remember { mutableStateOf<Uri?>(null) }
+    var cameraFile by remember { mutableStateOf<File?>(null) }
+    var cameraSource by remember { mutableStateOf(false) }
     var preprocess by remember { mutableStateOf("") }
     var duplicates by remember { mutableStateOf<List<InvestigationCase>?>(null) }
+    var chooseDefaultAddress by remember { mutableStateOf(false) }
 
     suspend fun persist() {
         saving = true
-        val id = vm.create(parsed.copy(status = parsed.status.normalizedStatusV29()))
-        source?.let {
-            val attachment = OriginalFileStore.copyOriginal(ctx, it, id, parsed.year, "ORIGINAL_REQUEST").attachment
+        val finalCase = profile.applyTo(parsed).copy(status = parsed.status.normalizedStatusV29())
+        val id = vm.create(finalCase)
+        source?.let { uri ->
+            val attachment = if (cameraSource && cameraFile != null) {
+                OriginalFileStore.finalizeCamera(cameraFile!!, id, "ORIGINAL_REQUEST").attachment
+            } else {
+                OriginalFileStore.copyOriginal(ctx, uri, id, parsed.year, "ORIGINAL_REQUEST").attachment
+            }
             vm.addAttachment(attachment)
         }
+        cameraFile = null
         saving = false
         onDone()
     }
+
+    fun checkDuplicatesAndPersist() {
+        scope.launch {
+            saving = true
+            val found = vm.findDuplicates(parsed)
+            if (found.isNotEmpty()) {
+                duplicates = found
+                saving = false
+            } else {
+                persist()
+            }
+        }
+    }
+
+    fun acceptOcr(uri: Uri, fromCamera: Boolean, file: File? = null) {
+        if (!fromCamera) cameraFile?.delete()
+        source = uri
+        cameraSource = fromCamera
+        cameraFile = file
+        busy = true
+        raw = ""
+        showRaw = false
+        preprocess = "문서 분석 중..."
+        scope.launch {
+            runCatching { OcrService.recognizeCase(ctx, uri) }
+                .onSuccess { result ->
+                    raw = result.rawText
+                    parsed = profile.applyTo(result.parsed).copy(status = result.parsed.status.normalizedStatusV29())
+                    preprocess = result.preprocessMessage
+                }
+                .onFailure { preprocess = "OCR 실패: ${it.message.orEmpty()}" }
+            busy = false
+        }
+    }
+
+    if (showProfileDialog) InvestigatorProfileDialog(
+        initial = profile,
+        onDismiss = { showProfileDialog = false },
+        onSave = { value ->
+            InvestigatorProfileStore.save(ctx, value)
+            profile = InvestigatorProfileStore.load(ctx)
+            parsed = profile.applyTo(parsed)
+            vm.applyInvestigatorProfile(profile)
+            showProfileDialog = false
+        }
+    )
+
+    if (chooseDefaultAddress) DefaultAddressChoiceDialog(
+        value = parsed,
+        onDismiss = { chooseDefaultAddress = false },
+        onSelect = { type ->
+            parsed = parsed.copy(defaultAddressType = type)
+            chooseDefaultAddress = false
+            checkDuplicatesAndPersist()
+        }
+    )
 
     duplicates?.let { rows ->
         AlertDialog(
@@ -985,33 +1032,44 @@ private fun OcrRegisterScreenV29(vm: AppViewModel, onDone: () -> Unit, onCancel:
     }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) {
-            source = uri
-            busy = true
-            raw = ""
-            showRaw = false
-            preprocess = "문서 분석 중..."
-            scope.launch {
-                runCatching { OcrService.recognizeCase(ctx, uri) }
-                    .onSuccess { r ->
-                        raw = r.rawText
-                        parsed = r.parsed.copy(status = r.parsed.status.normalizedStatusV29())
-                        preprocess = r.preprocessMessage
-                    }
-                    .onFailure { preprocess = "OCR 실패: ${it.message.orEmpty()}" }
-                busy = false
-            }
+        if (uri != null) acceptOcr(uri, fromCamera = false)
+    }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val file = cameraFile
+        val uri = file?.let { FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", it) }
+        if (ok && file != null && uri != null) acceptOcr(uri, fromCamera = true, file = file)
+        else {
+            file?.delete()
+            cameraFile = null
+            cameraSource = false
         }
     }
     val warnings = remember(parsed) { ocrWarningsV29(parsed) }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("조사의뢰서 등록") }, navigationIcon = { TextButton(onClick = onCancel) { Text("뒤로") } }) }) { pad ->
+    Scaffold(topBar = { TopAppBar(title = { Text("조사의뢰서 등록") }, navigationIcon = { TextButton(onClick = { cameraFile?.delete(); onCancel() }) { Text("뒤로") } }) }) { pad ->
         Column(Modifier.padding(pad).verticalScroll(rememberScrollState()).padding(16.dp)) {
             Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
-                    Text("종이 조사의뢰서 사진을 선택하세요.", fontWeight = FontWeight.SemiBold)
+                    Text("조사의뢰서를 가져올 방법을 선택하세요.", fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(8.dp))
-                    Button(onClick = { picker.launch("image/*") }, enabled = !busy && !saving) { Text("조사의뢰서 사진 선택") }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { picker.launch("image/*") },
+                            enabled = !busy && !saving,
+                            modifier = Modifier.weight(1f)
+                        ) { Text("사진 선택") }
+                        OutlinedButton(
+                            onClick = {
+                                val file = OriginalFileStore.createCameraTarget(ctx, LocalDate.now().year, "request")
+                                cameraFile = file
+                                val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", file)
+                                camera.launch(uri)
+                            },
+                            enabled = !busy && !saving,
+                            modifier = Modifier.weight(1f)
+                        ) { Text("카메라 촬영") }
+                    }
+                    Text("두 방법 모두 원본은 변경하지 않고 기기 안에 보관합니다.", style = MaterialTheme.typography.labelSmall)
                     if (busy || saving) { Spacer(Modifier.height(8.dp)); LinearProgressIndicator(Modifier.fillMaxWidth()) }
                 }
             }
@@ -1025,21 +1083,20 @@ private fun OcrRegisterScreenV29(vm: AppViewModel, onDone: () -> Unit, onCancel:
                 }
             }
             Spacer(Modifier.height(10.dp))
-            EditFields(parsed) { parsed = it }
+            EditFields(parsed, { parsed = profile.applyTo(it) }, fixedInvestigator = true)
             PlannedDateFieldV29(parsed.plannedDate) { parsed = parsed.copy(plannedDate = it) }
             StatusChoiceV29(parsed.status) { parsed = parsed.copy(status = it) }
             Spacer(Modifier.height(14.dp))
             Button(
-                enabled = source != null && !busy && !saving,
-                onClick = {
-                    scope.launch {
-                        saving = true
-                        val found = vm.findDuplicates(parsed)
-                        if (found.isNotEmpty()) { duplicates = found; saving = false } else persist()
-                    }
-                },
+                enabled = source != null && profile.isConfigured && !busy && !saving,
+                onClick = { chooseDefaultAddress = true },
                 modifier = Modifier.fillMaxWidth()
             ) { Text(if (warnings.isEmpty()) "검수 완료 및 저장" else "확인 후 저장") }
+            if (!profile.isConfigured) {
+                TextButton(onClick = { showProfileDialog = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("고정 조사담당자 먼저 설정")
+                }
+            }
             OutlinedButton(enabled = raw.isNotBlank(), onClick = { showRaw = !showRaw }, modifier = Modifier.fillMaxWidth()) {
                 Text(if (showRaw) "OCR 원문 숨기기" else "OCR 원문 보기")
             }
@@ -1120,10 +1177,10 @@ private fun ocrWarningsV29(c: InvestigationCase): List<String> = buildList {
     if (c.managementNo.isBlank()) add("관리번호가 비어 있습니다.")
     if (c.requestDate.isBlank()) add("의뢰일을 확인하세요.")
     if (c.debtorName.isBlank()) add("채무자명이 비어 있습니다.")
+    else if (!Regex("\\(\\d{6}(?:-\\*)?\\)").containsMatchIn(c.debtorName)) add("채무자 생년월일을 확인하세요.")
     if (c.propertyAddress.isBlank()) add("물건소재지가 비어 있습니다.")
     if (c.branch.isBlank()) add("농협 영업점 정보가 비어 있습니다.")
     if (c.requester.isBlank()) add("조사의뢰자 정보가 비어 있습니다.")
-    if (c.investigatorPhone.isBlank()) add("조사담당자 전화번호를 확인하세요.")
 }
 
 private fun caseWarningsV29(c: InvestigationCase, today: LocalDate): List<String> = buildList {
@@ -1139,19 +1196,6 @@ private fun caseWarningsV29(c: InvestigationCase, today: LocalDate): List<String
             days in 0..2 -> add("완료요청일 임박")
         }
     }
-}
-
-private fun nextCaseV29(all: List<InvestigationCase>, current: InvestigationCase): InvestigationCase? {
-    if (current.plannedDate.isBlank()) return null
-    return all.filter {
-        it.id != current.id &&
-            it.plannedDate == current.plannedDate &&
-            it.status.normalizedStatusV29() != STATUS_DONE_V29
-    }.sortedWith(compareBy<InvestigationCase> { if (it.routeOrder > 0) it.routeOrder else Int.MAX_VALUE }.thenBy { it.id })
-        .firstOrNull { current.routeOrder <= 0 || it.routeOrder > current.routeOrder }
-        ?: all.filter {
-            it.id != current.id && it.plannedDate == current.plannedDate && it.status.normalizedStatusV29() != STATUS_DONE_V29
-        }.minByOrNull { if (it.routeOrder > 0) it.routeOrder else Int.MAX_VALUE }
 }
 
 private fun autoRouteV29(items: List<InvestigationCase>): List<InvestigationCase> {

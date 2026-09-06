@@ -34,8 +34,9 @@ android {
         applicationId = "kr.co.investigation.manager"
         minSdk = 28
         targetSdk = 35
-        versionCode = 34
-        versionName = "0.34.0"
+        versionCode = 35
+        versionName = "0.35.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // 배포 APK는 ARM 전용으로 유지한다. CI의 태블릿 가상기기 테스트에서만 x86_64를
         // 추가해 OpenCV/지도 SDK의 중복 네이티브 라이브러리가 배포본에 포함되지 않게 한다.
         ndk {
@@ -113,4 +114,7 @@ dependencies {
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test:core:1.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
 }

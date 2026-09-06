@@ -27,14 +27,15 @@ suspend fun resolveNavigationTargetV29(
     val address = if (ownerAddress) c.ownerAddress.trim() else c.propertyAddress.trim()
     if (address.isBlank()) return null
 
-    val xy = if (!ownerAddress && c.propertyLatitude != null && c.propertyLongitude != null) {
+    val isDefaultAddress = ownerAddress == (c.normalizedDefaultAddressType() == DEFAULT_ADDRESS_OWNER)
+    val xy = if (isDefaultAddress && c.propertyLatitude != null && c.propertyLongitude != null) {
         c.propertyLatitude to c.propertyLongitude
     } else {
         GeocoderService.resolve(context, address)
     } ?: return null
 
     return NavigationTargetV29(
-        label = if (ownerAddress) "소유자 주소" else "물건 소재지",
+        label = if (ownerAddress) "소유자 주소" else "임차인 주소(물건 소재지)",
         address = address,
         latitude = xy.first,
         longitude = xy.second

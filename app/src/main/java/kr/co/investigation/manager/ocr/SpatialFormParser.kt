@@ -54,8 +54,6 @@ object SpatialFormParser {
 
         val requestDateRow = row(label("의뢰일"))
         val managementRow = row(label("관리번호"))
-        val investigatorRow = row(label("조사담당자"))
-
         val debtorLabel = label("채무자명", "채무자 명")
         val debtorRow = row(debtorLabel)
         val phoneLabel = debtorLabel?.let { labelNear(it.cy, "전화번호", "전화 번호") }
@@ -79,11 +77,9 @@ object SpatialFormParser {
 
         val requestDate = normalizeDate(afterLabel(requestDateRow, "의뢰일"))
         val managementNo = normalizeManagement(afterLabel(managementRow, "관리번호"))
-        val investigator = personName(afterLabel(investigatorRow, "조사담당자"))
-
         val debtorSegment = betweenLabels(debtorRow, "채무자명", "전화번호")
             .ifBlank { betweenLabels(debtorRow, "채무자 명", "전화 번호") }
-        val debtorName = personName(debtorSegment)
+        val debtorName = OcrFieldNormalizer.debtorIdentity(debtorSegment)
 
         val phone = when {
             phoneLabel != null -> phones(afterLabel(debtorRow, "전화번호", "전화 번호")).firstOrNull().orEmpty()
@@ -98,7 +94,7 @@ object SpatialFormParser {
         val investigationType = betweenLabels(investigationRow, "조사구분", "대출종류")
             .ifBlank { betweenLabels(investigationRow, "조사 구분", "대출 종류") }
             .let(::cleanValue)
-        val loanType = normalizeLoanType(afterLabel(row(loanLabel), "대출종류", "대출 종류"))
+        val loanType = OcrFieldNormalizer.loanType(afterLabel(row(loanLabel), "대출종류", "대출 종류"))
         val propertyType = normalizePropertyType(afterLabel(propertyTypeRow, "물건종류", "물건 종류"))
         val propertyAddress = normalizeAddress(afterLabel(propertyAddressRow, "물건소재지", "물건 소재지"))
 
@@ -123,7 +119,6 @@ object SpatialFormParser {
             year = requestDate.take(4).toIntOrNull() ?: LocalDate.now().year,
             managementNo = managementNo,
             requestDate = requestDate,
-            investigator = investigator,
             debtorName = debtorName,
             phone = phone,
             mobile = mobile,
@@ -142,7 +137,7 @@ object SpatialFormParser {
         )
 
         val score = listOf(
-            parsed.managementNo, parsed.requestDate, parsed.investigator, parsed.debtorName,
+            parsed.managementNo, parsed.requestDate, parsed.debtorName,
             parsed.phone, parsed.mobile, parsed.dueDate, parsed.investigationType, parsed.loanType,
             parsed.propertyType, parsed.propertyAddress, parsed.ownerName, parsed.ownerResidentNo,
             parsed.ownerPhone, parsed.ownerAddress, parsed.requestNotes, parsed.branch
@@ -152,7 +147,7 @@ object SpatialFormParser {
             append("--- 고정양식 위치기반 OCR v0.11 ---\n")
             append("관리번호 : ${parsed.managementNo}\n")
             append("의뢰일 : ${parsed.requestDate}\n")
-            append("조사담당자 : ${parsed.investigator}\n")
+            append("조사담당자 : [OCR 제외]\n")
             append("채무자명 : ${parsed.debtorName}\n")
             append("전화번호 : ${parsed.phone}\n")
             append("핸드폰번호 : ${parsed.mobile}\n")
@@ -168,7 +163,7 @@ object SpatialFormParser {
             append("기타요청사항 : ${parsed.requestNotes.replace('\n', ' ')}\n")
             append("농협영업점 : ${parsed.branch}\n")
             append("조사의뢰자 : ${parsed.requester}\n")
-            append("위치기반 인식 품질 : $score/17\n")
+            append("위치기반 인식 품질 : $score/16\n")
         }
 
         return ParseResult(parsed, diagnostic, score)
@@ -314,14 +309,6 @@ object SpatialFormParser {
         val s = cleanValue(value)
         return listOf("아파트", "연립주택", "다세대주택", "단독주택", "다가구주택", "오피스텔", "상가", "공장", "토지", "주택")
             .firstOrNull { s.replace(" ", "").contains(it) }.orEmpty()
-    }
-
-    private fun normalizeLoanType(value: String): String {
-        val s = cleanValue(value).replace(" ", "")
-        val known = listOf("주택구입자금대출", "주택담보대출", "전세자금대출", "담보대출", "신용대출")
-        return known.firstOrNull { s.contains(it) }.orEmpty().ifBlank {
-            cleanValue(value).takeIf { it.contains("대출") && it.length <= 50 }.orEmpty()
-        }
     }
 
     private fun cleanValue(value: String): String = value

@@ -29,6 +29,12 @@ object StructuredFieldOcrRepair {
         val source = normalized.bitmap
         val client = TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
         return try {
+            val debtorRaw = readBox(client, source, Box(430, 760, 1165, 975))
+            val debtor = OcrFieldNormalizer.debtorIdentity(debtorRaw)
+
+            val loanRaw = readBox(client, source, Box(1540, 1070, 2410, 1300))
+            val loanType = OcrFieldNormalizer.loanType(loanRaw)
+
             val ownerRaw = readBox(client, source, Box(700, 1405, 1585, 1580))
             val owner = extractOwner(ownerRaw)
 
@@ -54,6 +60,8 @@ object StructuredFieldOcrRepair {
 
             val c = base.parsed
             val fixed = c.copy(
+                debtorName = OcrFieldNormalizer.preferDebtor(c.debtorName, debtor),
+                loanType = OcrFieldNormalizer.preferLoan(c.loanType, loanType),
                 ownerName = owner.name.ifBlank { c.ownerName.takeIf(::validName).orEmpty() },
                 ownerResidentNo = owner.resident.ifBlank { c.ownerResidentNo },
                 ownerAddress = ownerAddress.ifBlank { sanitizeAddress(c.ownerAddress) },
@@ -67,6 +75,10 @@ object StructuredFieldOcrRepair {
                 parsed = fixed,
                 rawText = base.rawText + buildString {
                     append("\n\n--- 중요필드 위치 한정 재OCR v0.23 ---\n")
+                    append("채무자 영역 : ").append(debtorRaw.replace('\n', ' ')).append('\n')
+                    append("채무자 확정 : ").append(fixed.debtorName).append('\n')
+                    append("대출종류 영역 : ").append(loanRaw.replace('\n', ' ')).append('\n')
+                    append("대출종류 확정 : ").append(fixed.loanType).append('\n')
                     append("소유자 영역 : ").append(ownerRaw.replace('\n', ' ')).append('\n')
                     append("소유자 확정 : ").append(fixed.ownerName).append(" / ").append(fixed.ownerResidentNo).append('\n')
                     append("소유자주소 영역 : ").append(ownerAddressRaw.replace('\n', ' ')).append('\n')

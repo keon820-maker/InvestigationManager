@@ -43,13 +43,12 @@ object OcrService {
         val footer = FooterOcrRepair.repair(normalizedDocument, base)
         val notes = NotesOcrRepair.repair(normalizedDocument, footer)
         val common = CommonResultRepair.repair(notes)
-        val contacts = ContactInfoRepair.repair(common)
-        val header = HeaderContactOcrRepair.repair(normalizedDocument, contacts)
-        val structured = StructuredFieldOcrRepair.repair(normalizedDocument, header)
+        // 조사담당자 영역은 고정 로컬 프로필을 사용하므로 추가 OCR 패스에서 완전히 제외한다.
+        val structured = StructuredFieldOcrRepair.repair(normalizedDocument, common)
         val targetTenant = TargetTenantOcrRepair.repair(normalizedDocument, structured)
         val tenants = TenantResultSanitizer.repair(targetTenant)
         val final = FinalOcrRepairV26.repair(normalizedDocument, tenants)
-        return NotesTypoRepairV29.repair(final)
+        return excludeInvestigator(NotesTypoRepairV29.repair(final))
     }
 
     private fun looksLikeAppScreenshot(text: String): Boolean {
@@ -68,4 +67,14 @@ object OcrService {
     suspend fun recognize(context: Context, uri: Uri): String = recognizeCase(context, uri).rawText
 
     fun parse(text: String): InvestigationCase = FixedTemplateOcr.parseFallback(text)
+
+    private fun excludeInvestigator(result: OcrResult): OcrResult = result.copy(
+        parsed = result.parsed.copy(
+            investigator = "",
+            investigatorPhone = "",
+            investigatorFax = ""
+        ),
+        rawText = OcrFieldNormalizer.redactInvestigatorSection(result.rawText),
+        preprocessMessage = result.preprocessMessage + " / 조사담당자 OCR 제외"
+    )
 }

@@ -40,7 +40,7 @@ object AdaptiveOcr {
                     },
                     parsed = merged,
                     normalized = false,
-                    preprocessMessage = "${source.message} / 라벨 좌표기반 표 OCR / 인식 품질 $score/17"
+                    preprocessMessage = "${source.message} / 라벨 좌표기반 표 OCR / 인식 품질 $score/16"
                 )
             } else {
                 primary.copy(
@@ -66,6 +66,7 @@ object AdaptiveOcr {
         fun validDate(v: String) = Regex("20\\d{2}-\\d{2}-\\d{2}").matches(v)
         fun validPhone(v: String) = Regex("0\\d{1,2}-\\d{3,4}-\\d{4}").matches(v)
         fun validName(v: String) = Regex("[가-힣]{2,6}").matches(v)
+        fun validDebtor(v: String) = Regex("[가-힣]{2,6}(?:\\(\\d{6}(?:-\\*)?\\))?").matches(v)
         fun validAddress(v: String) = v.length >= 8 && Regex(
             "(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주|[가-힣]+시|[가-힣]+군|[가-힣]+구|[가-힣]+로|[가-힣]+길|[가-힣]+동)"
         ).containsMatchIn(v)
@@ -78,17 +79,17 @@ object AdaptiveOcr {
             year = requestDate.take(4).toIntOrNull() ?: s.year,
             managementNo = p(s.managementNo, f.managementNo, ::validManagement),
             requestDate = requestDate,
-            investigator = p(s.investigator, f.investigator, ::validName),
-            debtorName = p(s.debtorName, f.debtorName, ::validName),
+            debtorName = OcrFieldNormalizer.preferDebtor(
+                s.debtorName,
+                f.debtorName.takeIf(::validDebtor).orEmpty()
+            ),
             phone = p(s.phone, f.phone, ::validPhone),
             mobile = p(s.mobile, f.mobile, ::validPhone),
             dueDate = p(s.dueDate, f.dueDate, ::validDate),
             investigationType = s.investigationType.ifBlank {
                 f.investigationType.takeIf { it.contains("조사") && it.length <= 60 }.orEmpty()
             },
-            loanType = s.loanType.ifBlank {
-                f.loanType.takeIf { it.contains("대출") && it.length <= 50 }.orEmpty()
-            },
+            loanType = OcrFieldNormalizer.preferLoan(s.loanType, f.loanType),
             propertyType = s.propertyType.ifBlank {
                 f.propertyType.takeIf { it.length in 2..20 }.orEmpty()
             },
@@ -106,7 +107,7 @@ object AdaptiveOcr {
     }
 
     private fun qualityScore(c: InvestigationCase): Int = listOf(
-        c.managementNo, c.requestDate, c.investigator, c.debtorName, c.phone, c.mobile,
+        c.managementNo, c.requestDate, c.debtorName, c.phone, c.mobile,
         c.dueDate, c.investigationType, c.loanType, c.propertyType, c.propertyAddress,
         c.ownerName, c.ownerResidentNo, c.ownerPhone, c.ownerAddress, c.requestNotes, c.branch
     ).count { it.isNotBlank() }
