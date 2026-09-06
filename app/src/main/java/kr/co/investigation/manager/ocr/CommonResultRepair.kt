@@ -142,23 +142,34 @@ object CommonResultRepair {
         return score
     }
 
+    /**
+     * 조사구분의 의미를 정규화하되 원본에 포함된 세부 구분은 버리지 않는다.
+     * 예: "임대차조사(현장조사)" -> "임대차조사(현장조사)".
+     */
     private fun normalizeInvestigationType(value: String): String {
-        val s = value
+        val source = value
+            .replace('（', '(')
+            .replace('）', ')')
+            .replace("＋", "+")
             .replace(Regex("\\s+"), "")
             .replace("조시사", "조사")
             .replace("조시", "조사")
             .replace("열람조사사", "열람조사")
             .replace("임대차조사사", "임대차조사")
             .replace("담보조사사", "담보조사")
-            .replace("＋", "+")
+            .replace(Regex("^조사구분[:：|]?"), "")
+            .replace(Regex("\\++"), "+")
             .trim('+', ' ', '|')
 
+        val hasOnSiteQualifier = Regex("\\(현장조사\\)").containsMatchIn(source)
         val parts = mutableListOf<String>()
-        if (s.contains("담보")) parts += "담보조사"
-        if (s.contains("열람")) parts += "열람조사"
-        if (s.contains("임대차")) parts += "임대차조사"
+        if (source.contains("담보")) parts += "담보조사"
+        if (source.contains("열람")) parts += "열람조사"
+        if (source.contains("임대차")) {
+            parts += if (hasOnSiteQualifier) "임대차조사(현장조사)" else "임대차조사"
+        }
         if (parts.isNotEmpty()) return parts.distinct().joinToString("+")
-        return s
+        return source
     }
 
     private fun cleanNotes(value: String): String {
