@@ -31,6 +31,7 @@ data class InvestigationCase(
     val ownerResidentNo: String = "",
     val ownerPhone: String = "",
     val ownerAddress: String = "",
+    val defaultAddressType: String = "TENANT",
     val tenantsJson: String = "[]",
     val requestNotes: String = "",
     val branch: String = "",
@@ -106,7 +107,7 @@ interface AttachmentDao {
     @Query("DELETE FROM attachments WHERE caseId=:caseId") suspend fun deleteForCase(caseId:Long)
 }
 
-@Database(entities=[InvestigationCase::class, Attachment::class], version=5, exportSchema=false)
+@Database(entities=[InvestigationCase::class, Attachment::class], version=6, exportSchema=false)
 abstract class AppDb: RoomDatabase() {
     abstract fun cases():CaseDao
     abstract fun attachments():AttachmentDao
@@ -153,9 +154,15 @@ abstract class AppDb: RoomDatabase() {
             }
         }
 
+        private val MIGRATION_5_6 = object: androidx.room.migration.Migration(5, 6) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE cases ADD COLUMN defaultAddressType TEXT NOT NULL DEFAULT 'TENANT'")
+            }
+        }
+
         fun get(context:android.content.Context):AppDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, AppDb::class.java, "investigation.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .build()
                 .also{instance=it}
         }

@@ -65,17 +65,19 @@ object SpatialFieldExtractor {
             .ifBlank { findDates(raw).firstOrNull().orEmpty() }
 
         val management = normalizeManagement(value(anchor("관리번호", range = y(0.0, 0.32))))
-        val investigator = personName(value(anchor("조사담당자", range = y(0.0, 0.35))))
-
-        val debtorName = personName(value(anchor("채무자명", range = y(0.12, 0.48))))
+        // 조사담당자는 로컬 고정 프로필을 사용하므로 anchor를 찾거나 값을 읽지 않는다.
+        val debtorName = OcrFieldNormalizer.debtorIdentity(value(anchor("채무자명", range = y(0.12, 0.48))))
         val debtorPhone = normalizePhone(value(anchor("전화번호", range = y(0.12, 0.48))))
         val debtorMobile = normalizePhone(value(anchor("핸드폰번호", range = y(0.12, 0.48))))
         val dueDate = normalizeDate(value(anchor("완료요청일", range = y(0.12, 0.52))))
             .ifBlank { findDates(raw).firstOrNull { it != requestDate }.orEmpty() }
 
         val investigationType = cleanShort(value(anchor("조사구분", range = y(0.20, 0.62))), 70)
-        val loanType = cleanShort(value(anchor("대출종류", range = y(0.20, 0.62))), 70)
-            .ifBlank { Regex("[가-힣]{2,20}(?:담보)?대출").find(raw)?.value.orEmpty() }
+        val loanType = OcrFieldNormalizer.loanType(value(anchor("대출종류", range = y(0.20, 0.62))))
+            .ifBlank {
+                Regex("[가-힣]{2,20}(?:담보)?대출").find(raw)?.value
+                    ?.let(OcrFieldNormalizer::loanType).orEmpty()
+            }
         val propertyType = cleanShort(value(anchor("물건종류", range = y(0.20, 0.64))), 50)
             .ifBlank {
                 listOf("아파트", "연립주택", "다세대주택", "단독주택", "다가구주택", "오피스텔", "상가", "공장", "토지", "주택")
@@ -114,7 +116,6 @@ object SpatialFieldExtractor {
                 year = requestDate.take(4).toIntOrNull() ?: LocalDate.now().year,
                 managementNo = management,
                 requestDate = requestDate,
-                investigator = investigator,
                 debtorName = debtorName,
                 phone = debtorPhone,
                 mobile = debtorMobile,

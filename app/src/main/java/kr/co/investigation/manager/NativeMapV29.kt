@@ -315,7 +315,7 @@ private fun caseInfoMarkerBitmapV32(c: InvestigationCase, selected: Boolean): Bi
         if (c.routeOrder > 0) append("${c.routeOrder} · ")
         append(c.debtorName.ifBlank { "조사건" })
     }.take(18)
-    val secondLine = c.managementNo.ifBlank { shortAddressV32(c.propertyAddress) }.take(28)
+    val secondLine = c.managementNo.ifBlank { shortAddressV32(c.defaultAddress()) }.take(28)
 
     val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE

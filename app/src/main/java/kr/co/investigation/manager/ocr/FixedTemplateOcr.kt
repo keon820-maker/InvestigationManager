@@ -36,8 +36,9 @@ object FixedTemplateOcr {
     private val boxes = linkedMapOf(
         "의뢰일" to Box(900, 190, 1660, 285),
         "관리번호" to Box(500, 375, 1080, 455),
-        "조사담당자" to Box(500, 465, 800, 555),
-        "채무자명" to Box(500, 820, 860, 910),
+        // 조사담당자는 기기 내부 고정 프로필을 사용하므로 OCR하지 않는다.
+        // 채무자 값은 이름 뒤 생년월일 표기까지 들어오도록 전화번호 셀 직전까지 읽는다.
+        "채무자명" to Box(500, 795, 1160, 935),
         "전화번호" to Box(1170, 820, 1540, 910),
         "핸드폰번호" to Box(1880, 820, 2360, 910),
         "완료요청일" to Box(500, 915, 860, 1005),
@@ -80,13 +81,12 @@ object FixedTemplateOcr {
                 year = normalizeDate(rawFields["의뢰일"].orEmpty()).take(4).toIntOrNull() ?: LocalDate.now().year,
                 managementNo = normalizeManagement(rawFields["관리번호"].orEmpty()),
                 requestDate = normalizeDate(rawFields["의뢰일"].orEmpty()),
-                investigator = personName(rawFields["조사담당자"].orEmpty()),
-                debtorName = personName(rawFields["채무자명"].orEmpty()),
+                debtorName = OcrFieldNormalizer.debtorIdentity(rawFields["채무자명"].orEmpty()),
                 phone = normalizePhone(rawFields["전화번호"].orEmpty()),
                 mobile = normalizePhone(rawFields["핸드폰번호"].orEmpty()),
                 dueDate = normalizeDate(rawFields["완료요청일"].orEmpty()),
                 investigationType = valueText(rawFields["조사구분"].orEmpty(), "조사구분"),
-                loanType = normalizeLoanType(rawFields["대출종류"].orEmpty()),
+                loanType = OcrFieldNormalizer.loanType(rawFields["대출종류"].orEmpty()),
                 propertyType = normalizePropertyType(rawFields["물건종류"].orEmpty()),
                 propertyAddress = normalizeAddress(rawFields["물건소재지"].orEmpty()),
                 ownerName = personName(ownerIdentity),
@@ -113,7 +113,7 @@ object FixedTemplateOcr {
                 append("\n--- 자동 정리 결과 ---\n")
                 append("관리번호 : ${template.managementNo}\n")
                 append("의뢰일 : ${template.requestDate}\n")
-                append("조사담당자 : ${template.investigator}\n")
+                append("조사담당자 : [OCR 제외]\n")
                 append("채무자명 : ${template.debtorName}\n")
                 append("전화번호 : ${template.phone}\n")
                 append("핸드폰번호 : ${template.mobile}\n")
@@ -135,7 +135,7 @@ object FixedTemplateOcr {
                 rawText = diagnostic,
                 parsed = template,
                 normalized = true,
-                preprocessMessage = "${normalized.message} / 실제양식 셀 OCR / $rotationText / 인식 품질 $score/17"
+                preprocessMessage = "${normalized.message} / 실제양식 셀 OCR / $rotationText / 인식 품질 $score/16"
             )
         } finally {
             client.close()
@@ -172,7 +172,9 @@ object FixedTemplateOcr {
         val pairs = Regex("([가-힣]{2,6})\\s*\\(\\s*(\\d{6})[^)]*\\)")
             .findAll(text).map { it.groupValues[1] to it.groupValues[2] }.toList()
 
-        val debtor = personName(after("채무자명")).ifBlank { pairs.firstOrNull()?.first.orEmpty() }
+        val debtor = OcrFieldNormalizer.debtorIdentity(after("채무자명")).ifBlank {
+            pairs.firstOrNull()?.let { (name, birth) -> "$name($birth-*)" }.orEmpty()
+        }
         val owner = personName(after("성명", "물건소유자")).ifBlank { pairs.getOrNull(1)?.first.orEmpty() }
         val propAddr = normalizeAddress(after("물건소재지")).ifBlank {
             lines.map(::normalizeAddress).filter { looksLikeAddress(it) }.maxByOrNull { it.length }.orEmpty()
@@ -182,13 +184,12 @@ object FixedTemplateOcr {
             year = requestDate.take(4).toIntOrNull() ?: LocalDate.now().year,
             managementNo = normalizeManagement(after("관리번호")),
             requestDate = requestDate,
-            investigator = personName(after("조사담당자")),
             debtorName = debtor,
             phone = normalizePhone(after("전화번호")).ifBlank { phones.getOrNull(0).orEmpty() },
             mobile = normalizePhone(after("핸드폰번호")).ifBlank { phones.firstOrNull { it.startsWith("010") }.orEmpty() },
             dueDate = dueDate,
             investigationType = valueText(after("조사구분"), "조사구분"),
-            loanType = normalizeLoanType(after("대출종류")),
+            loanType = OcrFieldNormalizer.loanType(after("대출종류")),
             propertyType = normalizePropertyType(after("물건종류")),
             propertyAddress = propAddr,
             ownerName = owner,
@@ -206,11 +207,14 @@ object FixedTemplateOcr {
         fun validDate(s: String) = Regex("20\\d{2}-\\d{2}-\\d{2}").matches(s)
         fun validPhone(s: String) = Regex("0\\d{1,2}-\\d{3,4}-\\d{4}").matches(s)
         fun validName(s: String) = Regex("[가-힣]{2,6}").matches(s)
+        fun validDebtor(s: String) = Regex("[가-힣]{2,6}(?:\\(\\d{6}(?:-\\*)?\\))?").matches(s)
         return t.copy(
             managementNo = t.managementNo.ifBlank { f.managementNo.takeIf(::validManagement).orEmpty() },
             requestDate = t.requestDate.ifBlank { f.requestDate.takeIf(::validDate).orEmpty() },
-            investigator = t.investigator.ifBlank { f.investigator.takeIf(::validName).orEmpty() },
-            debtorName = t.debtorName.ifBlank { f.debtorName.takeIf(::validName).orEmpty() },
+            debtorName = OcrFieldNormalizer.preferDebtor(
+                t.debtorName,
+                f.debtorName.takeIf(::validDebtor).orEmpty()
+            ),
             phone = t.phone.ifBlank { f.phone.takeIf(::validPhone).orEmpty() },
             mobile = t.mobile.ifBlank { f.mobile.takeIf(::validPhone).orEmpty() },
             dueDate = t.dueDate.ifBlank { f.dueDate.takeIf(::validDate).orEmpty() },
@@ -311,7 +315,7 @@ object FixedTemplateOcr {
     }
 
     private fun qualityScore(c: InvestigationCase): Int = listOf(
-        c.managementNo, c.requestDate, c.investigator, c.debtorName, c.phone, c.mobile, c.dueDate,
+        c.managementNo, c.requestDate, c.debtorName, c.phone, c.mobile, c.dueDate,
         c.investigationType, c.loanType, c.propertyType, c.propertyAddress, c.ownerName, c.ownerResidentNo,
         c.ownerPhone, c.ownerAddress, c.requestNotes, c.branch
     ).count { it.isNotBlank() }
@@ -380,14 +384,6 @@ object FixedTemplateOcr {
         val s = valueText(value, "물건종류")
         val known = listOf("아파트", "연립주택", "다세대주택", "단독주택", "다가구주택", "오피스텔", "상가", "공장", "토지", "주택")
         return known.firstOrNull { s.contains(it) }.orEmpty()
-    }
-
-    private fun normalizeLoanType(value: String): String {
-        val s = valueText(value, "대출종류")
-        val known = listOf("주택구입자금대출", "주택담보대출", "전세자금대출", "담보대출", "신용대출")
-        return known.firstOrNull { s.replace(" ", "").contains(it) }.orEmpty().ifBlank {
-            s.takeIf { it.contains("대출") && it.length <= 40 }.orEmpty()
-        }
     }
 
     private fun normalizeBranch(value: String): String = valueText(value, "농협영업점", "영업점")
