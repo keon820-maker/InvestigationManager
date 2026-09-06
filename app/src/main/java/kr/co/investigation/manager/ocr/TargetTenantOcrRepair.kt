@@ -1,8 +1,6 @@
 package kr.co.investigation.manager.ocr
 
-import android.content.Context
 import android.graphics.Bitmap
-import android.net.Uri
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
@@ -25,10 +23,8 @@ object TargetTenantOcrRepair {
     private data class Box(val l: Int, val t: Int, val r: Int, val b: Int)
     private data class Tenant(val name: String = "", val phone: String = "")
 
-    suspend fun repair(context: Context, uri: Uri, base: OcrService.OcrResult): OcrService.OcrResult {
-        val normalized = runCatching { DocumentNormalizer.normalize(context, uri) }.getOrNull() ?: return base
+    suspend fun repair(normalized: DocumentNormalizer.Result, base: OcrService.OcrResult): OcrService.OcrResult {
         if (!normalized.documentDetected || normalized.bitmap.width < 1800 || normalized.bitmap.height < 2500) {
-            if (!normalized.bitmap.isRecycled) normalized.bitmap.recycle()
             return base
         }
 
@@ -96,7 +92,6 @@ object TargetTenantOcrRepair {
             )
         } finally {
             client.close()
-            if (!source.isRecycled) source.recycle()
         }
     }
 

@@ -2,21 +2,24 @@ package kr.co.investigation.manager.archive
 
 import android.content.Context
 import com.google.gson.GsonBuilder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kr.co.investigation.manager.data.*
-import kr.co.investigation.manager.storage.OriginalFileStore
 import java.io.*
+import java.security.MessageDigest
 import java.util.zip.*
 
 object ArchiveService {
     data class ExportResult(val file:File,val cases:Int,val attachments:Int,val verified:Boolean)
 
-    suspend fun exportYear(context:Context,db:AppDb,year:Int):ExportResult {
+    suspend fun exportYear(context:Context,db:AppDb,year:Int):ExportResult = withContext(Dispatchers.IO) {
         val cases=db.cases().getYear(year)
         val atts=if(cases.isEmpty()) emptyList() else db.attachments().getForCases(cases.map{it.id})
         val outDir=File(context.getExternalFilesDir(null),"exports").apply{mkdirs()}
         val zip=File(outDir,"조사관리_${year}_${System.currentTimeMillis()}.zip")
         val gson=GsonBuilder().setPrettyPrinting().create()
         ZipOutputStream(BufferedOutputStream(FileOutputStream(zip))).use { z ->
+            z.setLevel(Deflater.BEST_SPEED)
             fun bytes(name:String,data:ByteArray){ z.putNextEntry(ZipEntry(name)); z.write(data); z.closeEntry() }
             bytes("data/cases.json",gson.toJson(cases).toByteArray())
             bytes("data/attachments.json",gson.toJson(atts).toByteArray())
@@ -36,17 +39,32 @@ object ArchiveService {
             val manifest=StringBuilder("path,sha256,size\n")
             atts.forEach { a ->
                 val f=File(a.localPath); if(f.exists()){
-                    val entry="files/${a.caseId}/${f.name}"; z.putNextEntry(ZipEntry(entry)); f.inputStream().use{it.copyTo(z)}; z.closeEntry()
-                    manifest.append("$entry,${OriginalFileStore.sha256(f)},${f.length()}\n")
+                    val entry="files/${a.caseId}/${f.name}"
+                    z.putNextEntry(ZipEntry(entry))
+                    val digest = MessageDigest.getInstance("SHA-256")
+                    f.inputStream().buffered().use { input ->
+                        val buffer = ByteArray(COPY_BUFFER_SIZE)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            z.write(buffer, 0, count)
+                            digest.update(buffer, 0, count)
+                        }
+                    }
+                    z.closeEntry()
+                    val sha256 = digest.digest().joinToString("") { "%02x".format(it) }
+                    manifest.append("$entry,$sha256,${f.length()}\n")
                 }
             }
             bytes("data/SHA256_MANIFEST.csv",manifest.toString().toByteArray())
         }
         val verified=verifyZip(zip)
-        return ExportResult(zip,cases.size,atts.size,verified)
+        ExportResult(zip,cases.size,atts.size,verified)
     }
 
     private fun verifyZip(file:File):Boolean=runCatching {
-        ZipFile(file).use{z-> val e=z.entries(); while(e.hasMoreElements()){ val x=e.nextElement(); if(!x.isDirectory) z.getInputStream(x).use{it.copyTo(OutputStream.nullOutputStream())} }}; true
+        ZipFile(file).use{z-> val e=z.entries(); while(e.hasMoreElements()){ val x=e.nextElement(); if(!x.isDirectory) z.getInputStream(x).use{it.copyTo(OutputStream.nullOutputStream(), COPY_BUFFER_SIZE)} }}; true
     }.getOrDefault(false)
+
+    private const val COPY_BUFFER_SIZE = 256 * 1024
 }

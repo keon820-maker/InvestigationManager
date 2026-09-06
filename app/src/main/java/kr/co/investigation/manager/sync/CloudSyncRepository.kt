@@ -50,23 +50,21 @@ class CloudSyncRepository(
         }
 
     private suspend fun ensureCloudIds() {
-        localDb.cases().getAllIncludingDeleted().forEach { value ->
-            if (value.cloudId.isBlank() || value.modifiedByDevice.isBlank()) {
-                localDb.cases().update(
-                    value.copy(
-                        cloudId = value.cloudId.ifBlank { UUID.randomUUID().toString() },
-                        modifiedByDevice = value.modifiedByDevice.ifBlank { deviceId },
-                        lastSyncedAt = null
-                    )
-                )
-            }
+        val cases = localDb.cases().getMissingCloudIdentity().map { value ->
+            value.copy(
+                cloudId = value.cloudId.ifBlank { UUID.randomUUID().toString() },
+                modifiedByDevice = value.modifiedByDevice.ifBlank { deviceId },
+                lastSyncedAt = null
+            )
         }
-        localDb.attachments().getAll().forEach { value ->
-            if (value.cloudId.isBlank()) {
-                localDb.attachments().update(
-                    value.copy(cloudId = UUID.randomUUID().toString(), lastSyncedAt = null)
-                )
-            }
+        val attachments = localDb.attachments().getMissingCloudId().map { value ->
+            value.copy(cloudId = UUID.randomUUID().toString(), lastSyncedAt = null)
+        }
+        if (cases.isEmpty() && attachments.isEmpty()) return
+
+        localDb.withTransaction {
+            if (cases.isNotEmpty()) localDb.cases().updateAll(cases)
+            if (attachments.isNotEmpty()) localDb.attachments().updateAll(attachments)
         }
     }
 
@@ -77,10 +75,11 @@ class CloudSyncRepository(
         var downloaded = 0
         val remoteSnapshot = cases(uid).get(Source.SERVER).await()
         val remote = remoteSnapshot.documents.associateBy { it.id }
+        val localByCloudId = localDb.cases().getAllIncludingDeleted().associateBy { it.cloudId }
 
         remoteSnapshot.documents.forEach { document ->
             val remoteCase = document.toInvestigationCase()
-            val local = localDb.cases().getByCloudId(document.id)
+            val local = localByCloudId[document.id]
             when {
                 local == null -> {
                     localDb.cases().insert(remoteCase.copy(lastSyncedAt = syncedAt))
@@ -104,14 +103,19 @@ class CloudSyncRepository(
             }
         }
 
-        localDb.cases().getAllIncludingDeleted().forEach { local ->
+        val pendingUploads = localDb.cases().getAllIncludingDeleted().filter { local ->
             val document = remote[local.cloudId]
             val remoteCase = document?.toInvestigationCase()
-            if (remoteCase == null || compareVersion(local, remoteCase) > 0) {
-                cases(uid).document(local.cloudId).set(local.toCloudMap()).await()
-                markCaseSyncedIfUnchanged(local, syncedAt)
-                uploaded++
+            remoteCase == null || compareVersion(local, remoteCase) > 0
+        }
+        pendingUploads.chunked(FIRESTORE_BATCH_SIZE).forEach { chunk ->
+            val batch = firestore.batch()
+            chunk.forEach { local ->
+                batch.set(cases(uid).document(local.cloudId), local.toCloudMap())
             }
+            batch.commit().await()
+            markCasesSyncedIfUnchanged(chunk, syncedAt)
+            uploaded += chunk.size
         }
         return uploaded to downloaded
     }
@@ -121,47 +125,64 @@ class CloudSyncRepository(
         var uploaded = 0
         var downloaded = 0
         val syncedAt = System.currentTimeMillis()
-        val activeCases = localDb.cases().getAllIncludingDeleted().filter { it.deletedAt == null }
+        val activeCases = localDb.cases().getAllActive()
+        val localByCase = if (activeCases.isEmpty()) {
+            emptyMap()
+        } else {
+            localDb.attachments().getForCases(activeCases.map { it.id }).groupBy { it.caseId }
+        }
 
         activeCases.forEach { case ->
             val remoteSnapshot = attachmentCollection(uid, case.cloudId).get(Source.SERVER).await()
             val remoteById = remoteSnapshot.documents.associateBy { it.id }
-            var localAttachments = localDb.attachments().getForCase(case.id)
+            val localAttachments = localByCase[case.id].orEmpty().toMutableList()
+            val localByCloudId = localAttachments.associateBy { it.cloudId }.toMutableMap()
+            val localByFingerprint = localAttachments.associateBy { it.fingerprint() }.toMutableMap()
 
             remoteSnapshot.documents.forEach { document ->
                 val remote = document.toRemoteAttachment()
-                val exact = localAttachments.firstOrNull { it.cloudId == remote.cloudId }
-                val sameOriginal = exact ?: localAttachments.firstOrNull {
-                    it.sha256.equals(remote.sha256, ignoreCase = true) && it.type == remote.type
-                }
+                val exact = localByCloudId[remote.cloudId]
+                val sameOriginal = exact ?: localByFingerprint[remote.fingerprint()]
                 if (sameOriginal == null) {
                     val downloadedAttachment = downloadAttachment(case, remote, syncedAt)
-                    localDb.attachments().insert(downloadedAttachment)
+                    val id = localDb.attachments().insert(downloadedAttachment)
+                    val inserted = downloadedAttachment.copy(id = id)
+                    localAttachments += inserted
+                    localByCloudId[inserted.cloudId] = inserted
+                    localByFingerprint[inserted.fingerprint()] = inserted
                     downloaded++
                 } else {
                     val localFile = File(sameOriginal.localPath)
                     if (localFile.exists()) {
-                        check(OriginalFileStore.sha256(localFile).equals(remote.sha256, ignoreCase = true)) {
-                            "첨부 원본 해시가 달라 자동 덮어쓰기를 중단했습니다: ${sameOriginal.originalName}"
+                        check(sameOriginal.sha256.equals(remote.sha256, ignoreCase = true)) {
+                            "첨부 원본의 저장 해시가 클라우드와 달라 자동 덮어쓰기를 중단했습니다: ${sameOriginal.originalName}"
                         }
-                        localDb.attachments().update(
-                            sameOriginal.copy(
-                                cloudId = remote.cloudId,
-                                remotePath = remote.storagePath,
-                                uploadedAt = remote.uploadedAt,
-                                lastSyncedAt = syncedAt
-                            )
+                        check(localFile.length() == remote.byteSize) {
+                            "첨부 원본 크기가 클라우드와 달라 자동 덮어쓰기를 중단했습니다: ${sameOriginal.originalName}"
+                        }
+                        val updated = sameOriginal.copy(
+                            cloudId = remote.cloudId,
+                            remotePath = remote.storagePath,
+                            uploadedAt = remote.uploadedAt,
+                            lastSyncedAt = sameOriginal.lastSyncedAt ?: syncedAt
                         )
+                        if (updated != sameOriginal) {
+                            localDb.attachments().update(updated)
+                            localAttachments.replaceById(updated)
+                            localByCloudId[updated.cloudId] = updated
+                            localByFingerprint[updated.fingerprint()] = updated
+                        }
                     } else {
-                        localDb.attachments().update(
-                            downloadAttachment(case, remote, syncedAt).copy(id = sameOriginal.id)
-                        )
+                        val updated = downloadAttachment(case, remote, syncedAt).copy(id = sameOriginal.id)
+                        localDb.attachments().update(updated)
+                        localAttachments.replaceById(updated)
+                        localByCloudId[updated.cloudId] = updated
+                        localByFingerprint[updated.fingerprint()] = updated
                         downloaded++
                     }
                 }
             }
 
-            localAttachments = localDb.attachments().getForCase(case.id)
             var uploadedForCase = false
             localAttachments.forEach { local ->
                 if (remoteById[local.cloudId] == null) {
@@ -240,11 +261,13 @@ class CloudSyncRepository(
         )
     }
 
-    private suspend fun markCaseSyncedIfUnchanged(value: InvestigationCase, syncedAt: Long) {
+    private suspend fun markCasesSyncedIfUnchanged(values: List<InvestigationCase>, syncedAt: Long) {
         localDb.withTransaction {
-            val current = localDb.cases().get(value.id) ?: return@withTransaction
-            if (current.updatedAt == value.updatedAt && current.modifiedByDevice == value.modifiedByDevice) {
-                localDb.cases().update(current.copy(lastSyncedAt = syncedAt))
+            values.forEach { value ->
+                val current = localDb.cases().get(value.id) ?: return@forEach
+                if (current.updatedAt == value.updatedAt && current.modifiedByDevice == value.modifiedByDevice) {
+                    localDb.cases().update(current.copy(lastSyncedAt = syncedAt))
+                }
             }
         }
     }
@@ -256,6 +279,17 @@ class CloudSyncRepository(
 
     private fun storagePath(uid: String, caseCloudId: String, attachmentCloudId: String) =
         "users/$uid/cases/$caseCloudId/attachments/$attachmentCloudId"
+}
+
+private const val FIRESTORE_BATCH_SIZE = 400
+
+private fun Attachment.fingerprint(): String = "${sha256.lowercase()}\u0000$type"
+
+private fun RemoteAttachment.fingerprint(): String = "${sha256.lowercase()}\u0000$type"
+
+private fun MutableList<Attachment>.replaceById(value: Attachment) {
+    val index = indexOfFirst { it.id == value.id }
+    if (index >= 0) this[index] = value else add(value)
 }
 
 internal fun compareVersion(left: InvestigationCase, right: InvestigationCase): Int {

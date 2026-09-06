@@ -66,7 +66,7 @@ object DocumentNormalizer {
         val edges = Mat()
         val hierarchy = Mat()
         val contours = mutableListOf<MatOfPoint>()
-        try {
+        val result = try {
             Imgproc.cvtColor(rgba, gray, Imgproc.COLOR_RGBA2GRAY)
             Imgproc.GaussianBlur(gray, gray, Size(5.0, 5.0), 0.0)
             Imgproc.createCLAHE(2.2, Size(8.0, 8.0)).apply(gray, enhanced)
@@ -130,7 +130,7 @@ object DocumentNormalizer {
                 }
                 .maxByOrNull { anchorScore(it) }
 
-            return@withContext when {
+            when {
                 page != null && (page.areaFraction >= 0.46 || tableAnchor == null) -> {
                     warp(
                         rgba,
@@ -176,6 +176,9 @@ object DocumentNormalizer {
             gray.release(); enhanced.release(); edges.release(); hierarchy.release(); rgba.release()
             contours.forEach { runCatching { it.release() } }
         }
+        if (result.bitmap !== working && !working.isRecycled) working.recycle()
+        if (working !== srcBitmap && result.bitmap !== srcBitmap && !srcBitmap.isRecycled) srcBitmap.recycle()
+        result
     }
 
     private fun warp(source: Mat, from: Array<Point>, to: Array<Point>, message: String): Result {

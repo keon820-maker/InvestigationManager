@@ -39,9 +39,13 @@ fun AttachmentViewerScreen(att: Attachment, onBack: () -> Unit) {
     var offset by remember(att.id) { mutableStateOf(Offset.Zero) }
     var openError by remember(att.id) { mutableStateOf("") }
     val preview by produceState(initialValue = PreviewResult(), att.localPath) {
-        value = withContext(Dispatchers.IO) {
+        val loaded = withContext(Dispatchers.IO) {
             runCatching { PreviewResult(bitmap = loadPreviewBitmap(att.localPath)) }
                 .getOrElse { PreviewResult(error = it.message ?: "원본 미리보기를 열 수 없습니다.") }
+        }
+        value = loaded
+        awaitDispose {
+            loaded.bitmap?.let { bitmap -> if (!bitmap.isRecycled) bitmap.recycle() }
         }
     }
 

@@ -1,9 +1,7 @@
 package kr.co.investigation.manager.ocr
 
-import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Rect
-import android.net.Uri
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
@@ -25,7 +23,7 @@ import kotlin.math.max
 object FooterOcrRepair {
     private data class FooterLine(val text: String, val box: Rect)
 
-    suspend fun repair(context: Context, uri: Uri, base: OcrService.OcrResult): OcrService.OcrResult {
+    suspend fun repair(normalized: DocumentNormalizer.Result, base: OcrService.OcrResult): OcrService.OcrResult {
         val cleanedNotes = cleanNotes(base.parsed.requestNotes)
         val needsFooter = !validBranch(base.parsed.branch) || !validRequester(base.parsed.requester)
         if (!needsFooter) {
@@ -33,8 +31,6 @@ object FooterOcrRepair {
             else base.copy(parsed = base.parsed.copy(requestNotes = cleanedNotes))
         }
 
-        val normalized = runCatching { DocumentNormalizer.normalize(context, uri) }.getOrNull()
-            ?: return base.copy(parsed = base.parsed.copy(requestNotes = cleanedNotes))
         if (!normalized.documentDetected || normalized.bitmap.width < 1800 || normalized.bitmap.height < 2500) {
             return base.copy(parsed = base.parsed.copy(requestNotes = cleanedNotes))
         }

@@ -33,8 +33,14 @@ android {
         applicationId = "kr.co.investigation.manager"
         minSdk = 28
         targetSdk = 35
-        versionCode = 33
-        versionName = "0.33.0"
+        versionCode = 34
+        versionName = "0.34.0"
+        // 조사 앱은 실제 Android 단말용으로 배포한다. 데스크톱 에뮬레이터 ABI를 제외해
+        // OpenCV/지도 SDK의 중복 네이티브 라이브러리가 APK에 포함되지 않도록 한다.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
+        resourceConfigurations += listOf("ko", "en")
         buildConfigField("String", "KAKAO_NATIVE_APP_KEY", "\"$kakaoNativeAppKey\"")
         buildConfigField("boolean", "FIREBASE_CONFIGURED", hasFirebaseConfig.toString())
         buildConfigField("String", "FIREBASE_API_KEY", firebaseApiKey.asBuildConfigString())

@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -22,7 +23,7 @@ private data class TenantView(val name: String = "", val phone: String = "")
 
 @Composable
 fun RequestDocumentView(c: InvestigationCase, modifier: Modifier = Modifier) {
-    val tenants = parseTenants(c.tenantsJson)
+    val tenants = remember(c.tenantsJson) { parseTenants(c.tenantsJson) }
     Column(
         modifier
             .width(760.dp)

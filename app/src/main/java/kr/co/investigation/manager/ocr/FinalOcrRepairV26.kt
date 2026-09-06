@@ -1,8 +1,6 @@
 package kr.co.investigation.manager.ocr
 
-import android.content.Context
 import android.graphics.Bitmap
-import android.net.Uri
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
@@ -19,7 +17,7 @@ import kotlin.coroutines.resumeWithException
  * - 하단 영업점명/전화/Fax를 넓은 영역에서 최종 재OCR
  */
 object FinalOcrRepairV26 {
-    suspend fun repair(context: Context, uri: Uri, base: OcrService.OcrResult): OcrService.OcrResult {
+    suspend fun repair(normalized: DocumentNormalizer.Result, base: OcrService.OcrResult): OcrService.OcrResult {
         val rawManagement = extractManagementNo(base.rawText)
         var fixed = base.parsed.copy(
             managementNo = rawManagement.ifBlank { cleanManagementNo(base.parsed.managementNo) },
@@ -27,10 +25,7 @@ object FinalOcrRepairV26 {
             branch = normalizeBranch(base.parsed.branch).ifBlank { base.parsed.branch }
         )
 
-        val normalized = runCatching { DocumentNormalizer.normalize(context, uri) }.getOrNull()
-            ?: return finish(base, fixed, "")
         if (!normalized.documentDetected || normalized.bitmap.width < 1800 || normalized.bitmap.height < 2500) {
-            if (!normalized.bitmap.isRecycled) normalized.bitmap.recycle()
             return finish(base, fixed, "")
         }
 
@@ -92,7 +87,6 @@ object FinalOcrRepairV26 {
             })
         } finally {
             client.close()
-            if (!source.isRecycled) source.recycle()
         }
     }
 

@@ -80,7 +80,9 @@ interface CaseDao {
     @Query("SELECT * FROM cases WHERE id=:id") suspend fun get(id:Long): InvestigationCase?
     @Query("SELECT * FROM cases WHERE cloudId=:cloudId LIMIT 1") suspend fun getByCloudId(cloudId:String): InvestigationCase?
     @Query("SELECT * FROM cases WHERE year=:year AND deletedAt IS NULL") suspend fun getYear(year:Int): List<InvestigationCase>
+    @Query("SELECT * FROM cases WHERE deletedAt IS NULL") suspend fun getAllActive(): List<InvestigationCase>
     @Query("SELECT * FROM cases") suspend fun getAllIncludingDeleted(): List<InvestigationCase>
+    @Query("SELECT * FROM cases WHERE cloudId='' OR modifiedByDevice=''") suspend fun getMissingCloudIdentity(): List<InvestigationCase>
     @Query("SELECT * FROM cases WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC") fun observeDeleted(): Flow<List<InvestigationCase>>
     @Insert suspend fun insert(value:InvestigationCase):Long
     @Update suspend fun update(value:InvestigationCase)
@@ -95,9 +97,11 @@ interface AttachmentDao {
     @Query("SELECT * FROM attachments WHERE caseId IN (:caseIds)") suspend fun getForCases(caseIds:List<Long>):List<Attachment>
     @Query("SELECT * FROM attachments WHERE caseId=:caseId") suspend fun getForCase(caseId:Long):List<Attachment>
     @Query("SELECT * FROM attachments") suspend fun getAll():List<Attachment>
+    @Query("SELECT * FROM attachments WHERE cloudId=''") suspend fun getMissingCloudId():List<Attachment>
     @Query("SELECT * FROM attachments WHERE cloudId=:cloudId LIMIT 1") suspend fun getByCloudId(cloudId:String):Attachment?
     @Insert suspend fun insert(value:Attachment):Long
     @Update suspend fun update(value:Attachment)
+    @Update suspend fun updateAll(values:List<Attachment>)
     @Query("DELETE FROM attachments WHERE caseId IN (:caseIds)") suspend fun deleteForCases(caseIds:List<Long>)
     @Query("DELETE FROM attachments WHERE caseId=:caseId") suspend fun deleteForCase(caseId:Long)
 }
