@@ -15,7 +15,16 @@ object OcrService {
     )
 
     suspend fun recognizeCase(context: Context, uri: Uri): OcrResult {
-        val base = AdaptiveOcr.recognizeCase(context, uri)
+        val normalizedDocument = DocumentNormalizer.normalize(context, uri)
+        return try {
+            recognizeCase(normalizedDocument)
+        } finally {
+            if (!normalizedDocument.bitmap.isRecycled) normalizedDocument.bitmap.recycle()
+        }
+    }
+
+    private suspend fun recognizeCase(normalizedDocument: DocumentNormalizer.Result): OcrResult {
+        val base = AdaptiveOcr.recognizeCase(normalizedDocument)
 
         if (looksLikeAppScreenshot(base.rawText)) {
             return OcrResult(
@@ -31,15 +40,15 @@ object OcrService {
             )
         }
 
-        val footer = FooterOcrRepair.repair(context, uri, base)
-        val notes = NotesOcrRepair.repair(context, uri, footer)
+        val footer = FooterOcrRepair.repair(normalizedDocument, base)
+        val notes = NotesOcrRepair.repair(normalizedDocument, footer)
         val common = CommonResultRepair.repair(notes)
         val contacts = ContactInfoRepair.repair(common)
-        val header = HeaderContactOcrRepair.repair(context, uri, contacts)
-        val structured = StructuredFieldOcrRepair.repair(context, uri, header)
-        val targetTenant = TargetTenantOcrRepair.repair(context, uri, structured)
+        val header = HeaderContactOcrRepair.repair(normalizedDocument, contacts)
+        val structured = StructuredFieldOcrRepair.repair(normalizedDocument, header)
+        val targetTenant = TargetTenantOcrRepair.repair(normalizedDocument, structured)
         val tenants = TenantResultSanitizer.repair(targetTenant)
-        val final = FinalOcrRepairV26.repair(context, uri, tenants)
+        val final = FinalOcrRepairV26.repair(normalizedDocument, tenants)
         return NotesTypoRepairV29.repair(final)
     }
 

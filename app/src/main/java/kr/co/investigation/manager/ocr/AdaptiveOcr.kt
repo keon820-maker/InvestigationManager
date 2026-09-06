@@ -1,8 +1,6 @@
 package kr.co.investigation.manager.ocr
 
 import android.graphics.Bitmap
-import android.content.Context
-import android.net.Uri
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
@@ -20,13 +18,11 @@ import kotlin.coroutines.resumeWithException
  *    ML Kit boundingBox를 이용한 SpatialFormParser로 같은 행의 셀을 X좌표 순서로 재구성한다.
  */
 object AdaptiveOcr {
-    suspend fun recognizeCase(context: Context, uri: Uri): OcrService.OcrResult {
-        val primary = FixedTemplateOcr.recognizeCase(context, uri)
+    suspend fun recognizeCase(source: DocumentNormalizer.Result): OcrService.OcrResult {
+        val primary = FixedTemplateOcr.recognizeCase(source)
         if (primary.normalized) return primary
 
-        // 정렬 실패일 때만 두 번째 패스를 수행한다. DocumentNormalizer의 실패 결과 bitmap은
-        // EXIF 회전이 적용된 원본 작업용 복사본이며 증거 원본 파일에는 손대지 않는다.
-        val source = DocumentNormalizer.normalize(context, uri)
+        // 정렬 실패일 때만 같은 전처리 이미지를 재사용해 두 번째 패스를 수행한다.
         val client = TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
         return try {
             val full = recognizeText(client, source.bitmap)

@@ -1,9 +1,7 @@
 package kr.co.investigation.manager.ocr
 
-import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Matrix
-import android.net.Uri
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
@@ -55,9 +53,9 @@ object FixedTemplateOcr {
         "조사의뢰자" to Box(1170, 2910, 1800, 3045)
     )
 
-    suspend fun recognizeCase(context: Context, uri: Uri): OcrService.OcrResult {
-        val normalized = DocumentNormalizer.normalize(context, uri)
+    suspend fun recognizeCase(normalized: DocumentNormalizer.Result): OcrService.OcrResult {
         val client = TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
+        var derivedOrientation: Bitmap? = null
         try {
             if (!normalized.documentDetected || normalized.bitmap.width < 2000 || normalized.bitmap.height < 2800) {
                 val full = recognizeText(client, normalized.bitmap)
@@ -71,6 +69,7 @@ object FixedTemplateOcr {
             }
 
             val oriented = chooseUpright(client, normalized.bitmap)
+            if (oriented.bitmap !== normalized.bitmap) derivedOrientation = oriented.bitmap
             val rawFields = linkedMapOf<String, String>()
             for ((name, box) in boxes) {
                 rawFields[name] = recognizeBox(client, oriented.bitmap, box)
@@ -140,6 +139,7 @@ object FixedTemplateOcr {
             )
         } finally {
             client.close()
+            derivedOrientation?.let { if (!it.isRecycled) it.recycle() }
         }
     }
 

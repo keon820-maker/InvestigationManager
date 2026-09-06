@@ -1,8 +1,6 @@
 package kr.co.investigation.manager.ocr
 
-import android.content.Context
 import android.graphics.Bitmap
-import android.net.Uri
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.TextRecognizer
@@ -13,8 +11,7 @@ import kotlin.coroutines.resumeWithException
 
 /** 기타요청사항 전용 재검증. */
 object NotesOcrRepair {
-    suspend fun repair(context: Context, uri: Uri, base: OcrService.OcrResult): OcrService.OcrResult {
-        val normalized = runCatching { DocumentNormalizer.normalize(context, uri) }.getOrNull() ?: return base
+    suspend fun repair(normalized: DocumentNormalizer.Result, base: OcrService.OcrResult): OcrService.OcrResult {
         if (!normalized.documentDetected || normalized.bitmap.width < 1800 || normalized.bitmap.height < 2500) return base
 
         val source = normalized.bitmap

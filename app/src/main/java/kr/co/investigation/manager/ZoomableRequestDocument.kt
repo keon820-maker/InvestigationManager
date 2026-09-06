@@ -63,7 +63,7 @@ fun ZoomableRequestDocument(c: InvestigationCase, modifier: Modifier = Modifier)
                     .weight(1f)
                     .fillMaxWidth()
                     .background(Color(0xFFE9EDF0))
-                    .pointerInput(fitZoom, readableZoom, zoom) {
+                    .pointerInput(fitZoom, readableZoom) {
                         detectTapGestures(
                             onDoubleTap = {
                                 zoom = if (zoom <= fitZoom + 0.08f) readableZoom else fitZoom

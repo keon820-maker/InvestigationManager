@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.exifinterface.media.ExifInterface
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kr.co.investigation.manager.data.Attachment
 import java.io.*
 import java.security.MessageDigest
@@ -11,26 +13,45 @@ import java.security.MessageDigest
 object OriginalFileStore {
     data class Saved(val attachment: Attachment)
 
-    fun copyOriginal(context:Context, source:Uri, caseId:Long, year:Int, type:String):Saved {
+    suspend fun copyOriginal(context:Context, source:Uri, caseId:Long, year:Int, type:String):Saved = withContext(Dispatchers.IO) {
         val dir=File(context.filesDir,"originals/$year/$caseId").apply{mkdirs()}
         val ext = context.contentResolver.getType(source)?.substringAfter('/')?.replace("jpeg","jpg") ?: "jpg"
         val file=File(dir,"${type.lowercase()}_${System.currentTimeMillis()}.$ext")
-        context.contentResolver.openInputStream(source)!!.use { input -> FileOutputStream(file).use { input.copyTo(it) } }
-        return Saved(buildAttachment(file,caseId,type,context.contentResolver.getType(source)?:"image/jpeg"))
+        try {
+            val input = context.contentResolver.openInputStream(source) ?: error("원본 파일을 열 수 없습니다.")
+            input.use { sourceInput ->
+                FileOutputStream(file).buffered().use { output ->
+                    sourceInput.copyTo(output, COPY_BUFFER_SIZE)
+                }
+            }
+            Saved(buildAttachment(file,caseId,type,context.contentResolver.getType(source)?:"image/jpeg"))
+        } catch (error: Throwable) {
+            if (file.exists()) file.delete()
+            throw error
+        }
     }
 
     fun createCameraTarget(context:Context, year:Int, tempKey:String):File {
         return File(context.filesDir,"originals/$year/pending").apply{mkdirs()}.let { File(it,"camera_${tempKey}_${System.currentTimeMillis()}.jpg") }
     }
 
-    fun finalizeCamera(file:File,caseId:Long,type:String):Saved {
+    suspend fun finalizeCamera(file:File,caseId:Long,type:String):Saved = withContext(Dispatchers.IO) {
         val yearDir = file.parentFile?.parentFile
             ?: error("Invalid camera target path: ${file.absolutePath}")
         val finalDir=File(yearDir,"$caseId").apply{mkdirs()}
         val final=File(finalDir,"${type.lowercase()}_${System.currentTimeMillis()}.jpg")
-        file.copyTo(final, overwrite=true)
-        file.delete()
-        return Saved(buildAttachment(final,caseId,type,"image/jpeg"))
+        if (!file.renameTo(final)) {
+            try {
+                file.inputStream().buffered().use { input ->
+                    final.outputStream().buffered().use { output -> input.copyTo(output, COPY_BUFFER_SIZE) }
+                }
+            } catch (error: Throwable) {
+                if (final.exists()) final.delete()
+                throw error
+            }
+            file.delete()
+        }
+        Saved(buildAttachment(final,caseId,type,"image/jpeg"))
     }
 
     fun cloudDestination(
@@ -80,4 +101,6 @@ object OriginalFileStore {
         }
         return md.digest().joinToString(""){"%02x".format(it)}
     }
+
+    private const val COPY_BUFFER_SIZE = 256 * 1024
 }

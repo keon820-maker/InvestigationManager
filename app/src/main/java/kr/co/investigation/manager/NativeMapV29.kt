@@ -52,6 +52,7 @@ fun NativeMapPaneV29(
     var kakaoMap by remember { mutableStateOf<KakaoMap?>(null) }
     var mapError by remember { mutableStateOf(false) }
     var viewportKey by remember { mutableStateOf("") }
+    val markerBitmaps = remember { mutableListOf<Bitmap>() }
 
     val points = remember(items) {
         items.filter {
@@ -104,6 +105,8 @@ fun NativeMapPaneV29(
             onDispose {
                 disposed = true
                 runCatching { mapView.finish() }
+                markerBitmaps.forEach { bitmap -> if (!bitmap.isRecycled) bitmap.recycle() }
+                markerBitmaps.clear()
             }
         }
     }
@@ -126,8 +129,11 @@ fun NativeMapPaneV29(
         val pointsById = points.associateBy { it.id.toString() }
 
         labelLayer.removeAll()
+        markerBitmaps.forEach { bitmap -> if (!bitmap.isRecycled) bitmap.recycle() }
+        markerBitmaps.clear()
         points.forEach { c ->
             val bitmap = caseInfoMarkerBitmapV32(c, selected?.id == c.id)
+            markerBitmaps += bitmap
             val style = LabelStyle.from(bitmap)
                 .setAnchorPoint(0.5f, 1.0f)
                 .setApplyDpScale(false)

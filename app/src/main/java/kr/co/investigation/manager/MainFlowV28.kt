@@ -707,7 +707,7 @@ private fun RoutePlannerDialogV28(
     onDismiss: () -> Unit,
     onSave: (List<InvestigationCase>) -> Unit
 ) {
-    val ordered = remember(date, items.map { "${it.id}:${it.routeOrder}" }) {
+    val ordered = remember(date, items) {
         items.sortedWith(
             compareBy<InvestigationCase> { if (it.routeOrder > 0) it.routeOrder else Int.MAX_VALUE }
                 .thenBy { it.id }

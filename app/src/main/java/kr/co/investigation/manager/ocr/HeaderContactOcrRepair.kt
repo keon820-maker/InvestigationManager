@@ -1,8 +1,6 @@
 package kr.co.investigation.manager.ocr
 
-import android.content.Context
 import android.graphics.Bitmap
-import android.net.Uri
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
@@ -14,10 +12,9 @@ import kotlin.coroutines.resumeWithException
 
 /** 상단 조사담당자 Tel/Fax 전용 재OCR. */
 object HeaderContactOcrRepair {
-    suspend fun repair(context: Context, uri: Uri, base: OcrService.OcrResult): OcrService.OcrResult {
+    suspend fun repair(normalized: DocumentNormalizer.Result, base: OcrService.OcrResult): OcrService.OcrResult {
         if (base.parsed.investigatorPhone.isNotBlank() && base.parsed.investigatorFax.isNotBlank()) return base
 
-        val normalized = runCatching { DocumentNormalizer.normalize(context, uri) }.getOrNull() ?: return base
         val source = normalized.bitmap
         val client = TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
         return try {
@@ -47,7 +44,6 @@ object HeaderContactOcrRepair {
             )
         } finally {
             client.close()
-            if (!source.isRecycled) source.recycle()
         }
     }
 
