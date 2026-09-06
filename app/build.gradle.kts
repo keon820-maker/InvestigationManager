@@ -34,8 +34,8 @@ android {
         applicationId = "kr.co.investigation.manager"
         minSdk = 28
         targetSdk = 35
-        versionCode = 38
-        versionName = "0.35.3"
+        versionCode = 39
+        versionName = "0.35.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // 배포 APK는 ARM 전용으로 유지한다. CI의 태블릿 가상기기 테스트에서만 x86_64를
         // 추가해 OpenCV/지도 SDK의 중복 네이티브 라이브러리가 배포본에 포함되지 않게 한다.

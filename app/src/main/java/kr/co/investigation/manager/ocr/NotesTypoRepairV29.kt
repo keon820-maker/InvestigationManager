@@ -10,11 +10,11 @@ object NotesTypoRepairV29 {
         return base.copy(
             parsed = base.parsed.copy(requestNotes = after),
             rawText = base.rawText + buildString {
-                append("\n\n--- 기타요청사항 오기 보정 v0.35.2 ---\n")
+                append("\n\n--- 기타요청사항 오기 보정 v0.35.4 ---\n")
                 append("보정 전 : ").append(before.replace('\n', ' ')).append('\n')
                 append("보정 후 : ").append(after.replace('\n', ' ')).append('\n')
             },
-            preprocessMessage = base.preprocessMessage + " / 기타요청사항 중복·오기 보정 v0.35.2"
+            preprocessMessage = base.preprocessMessage + " / 기타요청사항 최종 중복·오기 보정 v0.35.4"
         )
     }
 
@@ -46,14 +46,23 @@ object NotesTypoRepairV29 {
             .replace(Regex("\\s+([,.])"), "$1")
             .replace(Regex("[ \\t]{2,}"), " ")
 
-        val cleaned = s.lines()
+        val sourceLines = s.lines()
             .map { it.replace(Regex("[ \\t]+"), " ").trim() }
             .filter { it.isNotBlank() }
-            // OCR raw+enhanced 결합 과정에서 중간에 끼어드는 깨진 '기타요청사항' 라벨 제거.
-            .filterNot(::looksLikeNotesHeader)
 
-        // raw/enhanced 두 패스가 같은 메모를 연속으로 붙이는 경우가 있다.
-        // 종결점/띄어쓰기 차이만 있는 행도 같은 행으로 보고 첫 번째 결과를 유지한다.
+        // raw/enhanced OCR가 두 번 이어 붙는 경우 두 번째 블록 앞에
+        // '기타요청사항' 라벨(예: 기타요최시환, 기e요최시환)이 다시 나타난다.
+        // 이미 본문을 하나 이상 확보한 뒤 라벨이 재등장하면 그 뒤는 중복 OCR 블록으로 보고 버린다.
+        val cleaned = mutableListOf<String>()
+        for (line in sourceLines) {
+            if (looksLikeNotesHeader(line)) {
+                if (cleaned.isNotEmpty()) break
+                continue
+            }
+            cleaned += line
+        }
+
+        // 라벨 없이도 같은 행이 반복될 수 있으므로 종결점/띄어쓰기 차이까지 정규화해 한 번만 남긴다.
         val unique = linkedMapOf<String, String>()
         cleaned.forEach { line ->
             unique.putIfAbsent(canonicalLine(line), line)
@@ -66,10 +75,15 @@ object NotesTypoRepairV29 {
         .trim()
 
     private fun looksLikeNotesHeader(line: String): Boolean {
-        val c = line.replace(Regex("[^가-힣]"), "")
-        if (c == "기타요청사항") return true
-        // 기타요최시환처럼 짧은 라벨 자체가 깨진 경우만 제거하고 일반 문장은 건드리지 않는다.
-        return c.length in 5..10 && c.startsWith("기타요") &&
-            (c.contains("사항") || c.contains("시환") || c.contains("시항") || c.contains("최시"))
+        val compact = line.replace(Regex("[^가-힣A-Za-z0-9]"), "")
+        val hangul = compact.replace(Regex("[^가-힣]"), "")
+        if (hangul == "기타요청사항") return true
+
+        // '기타요최시환', '기e요최시환'처럼 한두 글자가 깨진 짧은 라벨만 허용한다.
+        // 일반 메모 문장이 잘리는 것을 막기 위해 짧은 독립 행에만 적용한다.
+        return compact.length in 5..12 && compact.startsWith("기") &&
+            (compact.contains("요최시") || compact.contains("요청사") ||
+                hangul.contains("요최시") || hangul.contains("요청사") ||
+                hangul.contains("요시환"))
     }
 }
