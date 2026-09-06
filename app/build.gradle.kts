@@ -6,6 +6,7 @@ plugins {
 }
 
 val kakaoNativeAppKey = providers.environmentVariable("KAKAO_NATIVE_APP_KEY").orNull.orEmpty()
+val includeEmulatorAbi = providers.gradleProperty("includeEmulatorAbi").orNull == "true"
 val signingKeystoreFile = providers.environmentVariable("SIGNING_KEYSTORE_FILE").orNull
 val signingStorePassword = providers.environmentVariable("SIGNING_STORE_PASSWORD").orNull
 val hasPermanentSigning = !signingKeystoreFile.isNullOrBlank() && !signingStorePassword.isNullOrBlank()
@@ -35,10 +36,13 @@ android {
         targetSdk = 35
         versionCode = 34
         versionName = "0.34.0"
-        // 조사 앱은 실제 Android 단말용으로 배포한다. 데스크톱 에뮬레이터 ABI를 제외해
-        // OpenCV/지도 SDK의 중복 네이티브 라이브러리가 APK에 포함되지 않도록 한다.
+        // 배포 APK는 ARM 전용으로 유지한다. CI의 태블릿 가상기기 테스트에서만 x86_64를
+        // 추가해 OpenCV/지도 SDK의 중복 네이티브 라이브러리가 배포본에 포함되지 않게 한다.
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+            if (includeEmulatorAbi) {
+                abiFilters += "x86_64"
+            }
         }
         resourceConfigurations += listOf("ko", "en")
         buildConfigField("String", "KAKAO_NATIVE_APP_KEY", "\"$kakaoNativeAppKey\"")
