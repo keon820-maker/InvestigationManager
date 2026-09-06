@@ -15,6 +15,7 @@ class OcrFieldNormalizerTest {
     @Test
     fun completeRealEstateLoanWinsOverShorterSubstring() {
         assertEquals("부동산 담보대출", OcrFieldNormalizer.loanType("대출 종류 | 부동산담보대출"))
+        assertEquals("부동산 담보대출", OcrFieldNormalizer.loanType("부동산남보대출"))
         assertEquals(
             "부동산 담보대출",
             OcrFieldNormalizer.preferLoan("담보대출", "부동산 담보대출")

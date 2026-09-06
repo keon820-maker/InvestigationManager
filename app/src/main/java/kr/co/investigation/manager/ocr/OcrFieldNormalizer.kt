@@ -32,14 +32,20 @@ internal object OcrFieldNormalizer {
             .replace(Regex("\\s+"), " ")
             .trim()
         val compact = stripped.replace(" ", "")
+        // 태블릿 ML Kit가 작은 인쇄체의 '담'을 모양이 비슷한 글자로 읽는 경우가 있다.
+        // 앞뒤가 정확히 '부동산…보대출'인 문맥에만 한정해 과도한 보정을 막는다.
+        val contextual = compact.replace(
+            Regex("부동산[남당탐닮]보대출"),
+            "부동산담보대출"
+        )
         return when {
-            compact.contains("부동산담보대출") -> "부동산 담보대출"
-            compact.contains("주택구입자금대출") -> "주택구입자금대출"
-            compact.contains("주택담보대출") -> "주택담보대출"
-            compact.contains("전세자금대출") -> "전세자금대출"
-            compact.contains("신용대출") -> "신용대출"
-            compact.contains("담보대출") -> "담보대출"
-            compact.contains("대출") && stripped.length <= 50 -> stripped
+            contextual.contains("부동산담보대출") -> "부동산 담보대출"
+            contextual.contains("주택구입자금대출") -> "주택구입자금대출"
+            contextual.contains("주택담보대출") -> "주택담보대출"
+            contextual.contains("전세자금대출") -> "전세자금대출"
+            contextual.contains("신용대출") -> "신용대출"
+            contextual.contains("담보대출") -> "담보대출"
+            contextual.contains("대출") && stripped.length <= 50 -> stripped
             else -> ""
         }
     }
