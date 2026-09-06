@@ -11,6 +11,7 @@ local.properties
 *.p12
 *.pfx
 keystore.properties
+google-services.json
 
 # Build artifacts
 *.apk

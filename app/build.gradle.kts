@@ -9,6 +9,21 @@ val kakaoNativeAppKey = providers.environmentVariable("KAKAO_NATIVE_APP_KEY").or
 val signingKeystoreFile = providers.environmentVariable("SIGNING_KEYSTORE_FILE").orNull
 val signingStorePassword = providers.environmentVariable("SIGNING_STORE_PASSWORD").orNull
 val hasPermanentSigning = !signingKeystoreFile.isNullOrBlank() && !signingStorePassword.isNullOrBlank()
+val firebaseApiKey = providers.environmentVariable("FIREBASE_API_KEY").orNull.orEmpty()
+val firebaseAppId = providers.environmentVariable("FIREBASE_APP_ID").orNull.orEmpty()
+val firebaseProjectId = providers.environmentVariable("FIREBASE_PROJECT_ID").orNull.orEmpty()
+val firebaseStorageBucket = providers.environmentVariable("FIREBASE_STORAGE_BUCKET").orNull.orEmpty()
+val firebaseWebClientId = providers.environmentVariable("FIREBASE_WEB_CLIENT_ID").orNull.orEmpty()
+val hasFirebaseConfig = listOf(
+    firebaseApiKey,
+    firebaseAppId,
+    firebaseProjectId,
+    firebaseStorageBucket,
+    firebaseWebClientId
+).all { it.isNotBlank() }
+
+fun String.asBuildConfigString(): String = "\"" +
+    replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
 android {
     namespace = "kr.co.investigation.manager"
@@ -18,9 +33,15 @@ android {
         applicationId = "kr.co.investigation.manager"
         minSdk = 28
         targetSdk = 35
-        versionCode = 32
-        versionName = "0.32.0"
+        versionCode = 33
+        versionName = "0.33.0"
         buildConfigField("String", "KAKAO_NATIVE_APP_KEY", "\"$kakaoNativeAppKey\"")
+        buildConfigField("boolean", "FIREBASE_CONFIGURED", hasFirebaseConfig.toString())
+        buildConfigField("String", "FIREBASE_API_KEY", firebaseApiKey.asBuildConfigString())
+        buildConfigField("String", "FIREBASE_APP_ID", firebaseAppId.asBuildConfigString())
+        buildConfigField("String", "FIREBASE_PROJECT_ID", firebaseProjectId.asBuildConfigString())
+        buildConfigField("String", "FIREBASE_STORAGE_BUCKET", firebaseStorageBucket.asBuildConfigString())
+        buildConfigField("String", "FIREBASE_WEB_CLIENT_ID", firebaseWebClientId.asBuildConfigString())
     }
     signingConfigs {
         if (hasPermanentSigning) {
@@ -70,4 +91,16 @@ dependencies {
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("com.google.code.gson:gson:2.11.0")
     implementation("com.kakao.maps.open:android:2.15.1")
+
+    // BoM 33.13 stays compatible with this app's Kotlin 2.0 compiler.
+    // Firebase Auth 24.x is built with newer Kotlin metadata and cannot be consumed safely here.
+    implementation(platform("com.google.firebase:firebase-bom:33.13.0"))
+    implementation("com.google.firebase:firebase-auth")
+    implementation("com.google.firebase:firebase-firestore")
+    implementation("com.google.firebase:firebase-storage")
+    implementation("androidx.credentials:credentials:1.3.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
+    testImplementation("junit:junit:4.13.2")
 }

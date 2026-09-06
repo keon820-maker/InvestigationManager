@@ -4,7 +4,9 @@
     <application
         android:name=".InvestigationManagerApp"
         android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
         android:label="조사관리"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/Theme.InvestigationManager"
         android:usesCleartextTraffic="false">
         <activity
