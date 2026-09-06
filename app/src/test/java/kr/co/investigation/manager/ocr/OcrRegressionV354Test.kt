@@ -73,4 +73,42 @@ class OcrRegressionV354Test {
         val fixed = NotesTypoRepairV29.repair(base).parsed.requestNotes
         assertEquals("방문 전 연락 부탁드립니다.\n보증금:0", fixed)
     }
+
+    @Test
+    fun ePrefixedCorruptedHeaderDropsRepeatedBlock() {
+        val duplicated = """
+            기 대출건으로 임대차조사 부탁드립니다.
+            보증금:0
+            월임차료:0
+            E. 기요침 사항
+            기 대출건으로 임데치조시 부탁드립니다.
+        """.trimIndent()
+
+        val base = OcrService.OcrResult(
+            rawText = "",
+            parsed = InvestigationCase(year = 2026, requestNotes = duplicated),
+            normalized = true,
+            preprocessMessage = ""
+        )
+
+        val fixed = NotesTypoRepairV29.repair(base).parsed.requestNotes
+        assertEquals(
+            "기 대출건으로 임대차조사 부탁드립니다.\n보증금:0\n월임차료:0",
+            fixed
+        )
+    }
+
+    @Test
+    fun leaseInvestigationTypoIsCorrectedWithoutHeader() {
+        val notes = "기 대출건으로 임데치조시 부탁드립니다."
+        val base = OcrService.OcrResult(
+            rawText = "",
+            parsed = InvestigationCase(year = 2026, requestNotes = notes),
+            normalized = true,
+            preprocessMessage = ""
+        )
+
+        val fixed = NotesTypoRepairV29.repair(base).parsed.requestNotes
+        assertEquals("기 대출건으로 임대차조사 부탁드립니다.", fixed)
+    }
 }
