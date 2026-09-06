@@ -1,0 +1,95 @@
+name: Galaxy Tab S11 Emulator
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: galaxy-tab-s11-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tablet-smoke-test:
+    name: Android 16 / 2560x1600
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Enable KVM
+        shell: bash
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install and exercise app on tablet emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          cores: 4
+          emulator-options: >-
+            -no-snapshot -no-window -gpu swiftshader_indirect -noaudio
+            -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            mkdir -p tablet-test-artifacts
+
+            gradle -PincludeEmulatorAbi=true assembleDebug
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+
+            adb shell wm size 2560x1600
+            adb shell wm density 280
+            adb shell settings put system accelerometer_rotation 0
+
+            adb shell settings put system user_rotation 0
+            adb shell am force-stop kr.co.investigation.manager
+            adb shell am start -W -n kr.co.investigation.manager/.MainActivity \
+              | tee tablet-test-artifacts/launch-portrait.txt
+            sleep 5
+            adb shell pidof kr.co.investigation.manager
+            adb exec-out screencap -p > tablet-test-artifacts/portrait.png
+
+            adb shell settings put system user_rotation 1
+            sleep 5
+            adb shell pidof kr.co.investigation.manager
+            adb exec-out screencap -p > tablet-test-artifacts/landscape.png
+
+            adb shell dumpsys window windows \
+              | grep -E 'mCurrentFocus|mFocusedApp' \
+              | tee tablet-test-artifacts/focused-window.txt
+            grep -q 'kr.co.investigation.manager' tablet-test-artifacts/focused-window.txt
+            adb logcat -d -t 500 > tablet-test-artifacts/logcat.txt
+            file tablet-test-artifacts/portrait.png tablet-test-artifacts/landscape.png \
+              | tee tablet-test-artifacts/screenshot-sizes.txt
+
+      - name: Upload tablet test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: galaxy-tab-s11-emulator-evidence
+          path: tablet-test-artifacts
+          if-no-files-found: warn
+          retention-days: 14
