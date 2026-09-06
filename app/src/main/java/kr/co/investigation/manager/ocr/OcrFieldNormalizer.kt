@@ -32,20 +32,25 @@ internal object OcrFieldNormalizer {
             .replace(Regex("\\s+"), " ")
             .trim()
         val compact = stripped.replace(" ", "")
-        // 태블릿 ML Kit가 작은 인쇄체의 '담'을 모양이 비슷한 글자로 읽는 경우가 있다.
-        // 앞뒤가 정확히 '부동산…보대출'인 문맥에만 한정해 과도한 보정을 막는다.
-        val contextual = compact.replace(
-            Regex("부동산[남당탐닮]보대출"),
-            "부동산담보대출"
-        )
+
+        // 실제 의뢰서의 작은 인쇄체에서 반복되는 한 글자 오인식을 문맥이 확실한 경우에만 보정한다.
+        val contextual = compact
+            .replace(Regex("부동산[남당탐닮]보대출"), "부동산담보대출")
+            .replace(Regex("전세자[금긍]"), "전세자금")
+            .replace(Regex("주택구입자[금긍]"), "주택구입자금")
+            .replace(Regex("경락자[금긍]"), "경락자금")
+        val semantic = contextual.replace(Regex("[()（）\\[\\]]"), "")
+
         return when {
-            contextual.contains("부동산담보대출") -> "부동산 담보대출"
-            contextual.contains("주택구입자금대출") -> "주택구입자금대출"
-            contextual.contains("주택담보대출") -> "주택담보대출"
-            contextual.contains("전세자금대출") -> "전세자금대출"
-            contextual.contains("신용대출") -> "신용대출"
-            contextual.contains("담보대출") -> "담보대출"
-            contextual.contains("대출") && stripped.length <= 50 -> stripped
+            semantic.contains("부동산담보대출") -> "부동산 담보대출"
+            semantic.contains("전세자금보증서") -> "전세자금(보증서)"
+            semantic.contains("주택구입자금대출") -> "주택구입자금대출"
+            semantic.contains("경락자금대출") -> "경락자금대출"
+            semantic.contains("주택담보대출") -> "주택담보대출"
+            semantic.contains("전세자금대출") -> "전세자금대출"
+            semantic.contains("신용대출") -> "신용대출"
+            semantic.contains("담보대출") -> "담보대출"
+            semantic.contains("대출") && stripped.length <= 50 -> stripped
             else -> ""
         }
     }
