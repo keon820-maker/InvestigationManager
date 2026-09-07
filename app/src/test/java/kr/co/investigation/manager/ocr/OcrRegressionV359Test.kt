@@ -27,10 +27,26 @@ class OcrRegressionV359Test {
     }
 
     @Test
-    fun nonV358ResultDoesNotRunExtraContactOcr() {
+    fun missingContactsTriggerRecoveryEvenWithoutV358Marker() {
         val result = OcrService.OcrResult(
             rawText = "",
             parsed = InvestigationCase(year = 2026, mobile = ""),
+            normalized = true,
+            preprocessMessage = "일반 OCR"
+        )
+        assertTrue(ContactRecoveryRepairV359.needsRepair(result))
+    }
+
+    @Test
+    fun completeContactsDoNotTriggerRecovery() {
+        val result = OcrService.OcrResult(
+            rawText = "",
+            parsed = InvestigationCase(
+                year = 2026,
+                phone = "031-123-4567",
+                mobile = "010-2222-3333",
+                ownerPhone = "010-4444-5555"
+            ),
             normalized = true,
             preprocessMessage = "일반 OCR"
         )
