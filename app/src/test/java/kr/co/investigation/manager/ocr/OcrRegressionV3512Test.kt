@@ -36,6 +36,24 @@ class OcrRegressionV3512Test {
     }
 
     @Test
+    fun onSiteQualifierIsRestoredOnlyFromInvestigationTypeRow() {
+        val raw = "조 사 구 분 : 임대차조사(현장조사) | 대출종류 전세자금"
+        assertEquals(
+            "임대차조사(현장조사)",
+            FinalResultConsistencyV3512.preserveInvestigationQualifier("임대차조사", raw)
+        )
+    }
+
+    @Test
+    fun notesMentionOfOnSiteDoesNotInventQualifier() {
+        val raw = "조사구분 : 임대차조사\n기타요청사항 : 현장조사 전 연락 바랍니다"
+        assertEquals(
+            "임대차조사",
+            FinalResultConsistencyV3512.preserveInvestigationQualifier("임대차조사", raw)
+        )
+    }
+
+    @Test
     fun missingOwnerOrFooterFieldsTriggerFocusedRecovery() {
         val c = InvestigationCase(
             year = 2026,
