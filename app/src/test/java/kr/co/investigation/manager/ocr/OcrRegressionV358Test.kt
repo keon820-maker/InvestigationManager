@@ -81,4 +81,12 @@ class OcrRegressionV358Test {
 
         assertEquals("", fixed.ownerPhone)
     }
+
+    @Test
+    fun weakInitialConsonantInMojongRoadIsCorrected() {
+        assertEquals(
+            "12345 충남 예시시 모종로22번길 33 201호",
+            SpatialLeakRepairV358.cleanAddressLeak("12345 충남 예시시 오종로22번길 33 201호")
+        )
+    }
 }
