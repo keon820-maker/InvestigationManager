@@ -128,6 +128,8 @@ object SpatialLeakRepairV358 {
     internal fun cleanAddressLeak(value: String): String {
         if (value.isBlank()) return ""
         var s = value.replace('|', ' ').replace(Regex("\\s+"), " ").trim()
+        // ML Kit에서 '모종로22번길'의 첫 글자 ㅁ이 약하게 찍힌 경우 '오종로'로 흔들리는 패턴 보정.
+        s = s.replace(Regex("오종로(?=\\d+번길)"), "모종로")
         val cutLabels = listOf("물건소유자", "연락처", "전화번호", "핸드폰번호", "성명")
         val starts = cutLabels.mapNotNull { label ->
             val pattern = label.map { Regex.escape(it.toString()) }.joinToString("\\s*")
