@@ -14,20 +14,21 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /**
- * v0.35.18
- * 고정 좌표가 사진별 원근/정렬 잔차로 밀릴 때를 대비해, 이미 잘 읽힌 사람 이름을
- * 실제 OCR 좌표의 앵커로 사용한다. 이름이 있는 행 전체를 다시 잘라 OCR하므로
- * 채무자/소유자/임차인 전화번호가 서로 다른 역할로 새는 문제를 마지막에 교정한다.
+ * v0.35.19
+ * 고정양식 기준점 검출이 실패해도 전체 이미지 OCR 좌표의 사람 이름을 앵커로 사용한다.
+ * 즉 documentDetected=false여도 채무자/소유자 이름이 이미 읽혔다면 실제 이름 행을 다시 OCR해
+ * 연락처 역할을 교정한다. 이 로직은 고정 x/y 좌표에 의존하지 않는다.
  */
 object AnchorContactRepairV3518 {
     private data class Hit(val text: String, val box: Rect)
-    private data class Tenant(val name: String = "", val phone: String = "")
 
     suspend fun repair(
         normalized: DocumentNormalizer.Result,
         base: OcrService.OcrResult
     ): OcrService.OcrResult {
-        if (!normalized.documentDetected || normalized.bitmap.width < 1500 || normalized.bitmap.height < 2000) return base
+        // v0.35.18은 documentDetected=false일 때 여기서 바로 종료되어 실기기에서 절대 실행되지 않았다.
+        // 이름 앵커 방식은 전체 이미지 좌표만 있으면 동작하므로 기준점 검출 성공 여부와 분리한다.
+        if (normalized.bitmap.width < 900 || normalized.bitmap.height < 1200) return base
 
         val c = base.parsed
         val debtor = bareName(c.debtorName)
@@ -49,19 +50,18 @@ object AnchorContactRepairV3518 {
             val debtorHits = nameHits(hits, debtor)
             val ownerHits = nameHits(hits, owner)
 
-            // 같은 이름이 채무자와 임차인에 두 번 나오는 양식은 위쪽을 채무자, 아래쪽을 임차인으로 본다.
             val debtorHit = debtorHits.minByOrNull { it.box.centerY() }
             val tenantHit = debtorHits
-                .filter { debtorHit == null || it.box.centerY() > debtorHit.box.centerY() + normalized.bitmap.height * 0.12 }
+                .filter { debtorHit == null || it.box.centerY() > debtorHit.box.centerY() + normalized.bitmap.height * 0.10 }
                 .maxByOrNull { it.box.centerY() }
             val ownerHit = ownerHits
-                .filter { debtorHit == null || it.box.centerY() > debtorHit.box.centerY() + normalized.bitmap.height * 0.08 }
+                .filter { debtorHit == null || it.box.centerY() > debtorHit.box.centerY() + normalized.bitmap.height * 0.06 }
                 .minByOrNull { it.box.centerY() }
                 ?: ownerHits.minByOrNull { it.box.centerY() }
 
-            val debtorStrip = debtorHit?.let { readStrip(client, normalized.bitmap, it.box, 0.55f, 1.0f) }.orEmpty()
-            val ownerStrip = ownerHit?.let { readStrip(client, normalized.bitmap, it.box, 0.48f, 1.05f) }.orEmpty()
-            val tenantStrip = tenantHit?.let { readStrip(client, normalized.bitmap, it.box, 0.55f, 1.15f) }.orEmpty()
+            val debtorStrip = debtorHit?.let { readStrip(client, normalized.bitmap, it.box, 0.9f, 2.8f) }.orEmpty()
+            val ownerStrip = ownerHit?.let { readStrip(client, normalized.bitmap, it.box, 0.9f, 2.8f) }.orEmpty()
+            val tenantStrip = tenantHit?.let { readStrip(client, normalized.bitmap, it.box, 0.9f, 2.5f) }.orEmpty()
 
             val debtorPhones = phones(debtorStrip).filter { it !in excluded }
             val ownerPhones = phones(ownerStrip).filter { it !in excluded }
@@ -71,8 +71,6 @@ object AnchorContactRepairV3518 {
                 ?: ContactRoleResolverV3517.normalizePhone(c.mobile).takeIf { it.startsWith("01") && it !in excluded }
                 .orEmpty()
 
-            // 이 문서의 채무자 전화번호 셀은 공란이고 휴대폰 셀만 값이 있는 사례처럼,
-            // 행에서 01x 번호 하나만 검출되면 휴대폰으로 확정하고 전화번호 중복을 제거한다.
             val curPhone = ContactRoleResolverV3517.normalizePhone(c.phone)
             val fixedPhone = when {
                 curPhone.isBlank() -> ""
@@ -104,18 +102,20 @@ object AnchorContactRepairV3518 {
                 tenantsJson = fixedTenants
             )
 
-            if (fixed == c) base else base.copy(
+            base.copy(
                 parsed = fixed,
                 rawText = base.rawText + buildString {
-                    append("\n\n--- 이름 앵커 연락처 교정 v0.35.18 ---\n")
+                    append("\n\n--- 비정렬 이름 앵커 연락처 교정 v0.35.19 ---\n")
+                    append("기준점 검출 : ").append(normalized.documentDetected).append('\n')
                     append("채무자 앵커 횟수 : ").append(debtorHits.size).append('\n')
+                    append("소유자 앵커 횟수 : ").append(ownerHits.size).append('\n')
                     append("채무자 행 번호 : ").append(debtorPhones.joinToString()).append('\n')
                     append("소유자 행 번호 : ").append(ownerPhones.joinToString()).append('\n')
                     append("임차인 행 번호 : ").append(tenantPhones.joinToString()).append('\n')
                     append("최종 채무자 전화/휴대폰 : ").append(fixed.phone).append(" / ").append(fixed.mobile).append('\n')
                     append("최종 소유자 연락처 : ").append(fixed.ownerPhone).append('\n')
                 },
-                preprocessMessage = base.preprocessMessage + " / 이름 앵커 연락처 교정 v0.35.18"
+                preprocessMessage = base.preprocessMessage + " / 비정렬 이름 앵커 연락처 교정 v0.35.19"
             )
         } finally {
             client.close()
@@ -150,8 +150,8 @@ object AnchorContactRepairV3518 {
         val h = anchor.height().coerceAtLeast((source.height * 0.018f).toInt())
         val top = (anchor.centerY() - h * aboveFactor).toInt().coerceAtLeast(0)
         val bottom = (anchor.centerY() + h * belowFactor).toInt().coerceAtMost(source.height)
-        val left = (source.width * 0.12f).toInt()
-        val right = (source.width * 0.985f).toInt()
+        val left = (source.width * 0.08f).toInt()
+        val right = (source.width * 0.995f).toInt()
         if (bottom <= top + 4 || right <= left + 4) return ""
 
         val crop = Bitmap.createBitmap(source, left, top, right - left, bottom - top)
@@ -177,13 +177,12 @@ object AnchorContactRepairV3518 {
     }
 
     internal fun phones(value: String): List<String> {
-        val fixed = value.uppercase().replace('O', '0').replace('I', '1').replace('L', '1')
+        val fixed = value.uppercase().replace('O','0').replace('I','1').replace('L','1')
         val direct = sequenceOf(
             Regex("(?<!\\d)0\\d{8,11}(?!\\d)"),
             Regex("\\(?0\\d{1,3}\\)?[- .]?\\d{3,4}[- .]?\\d{4}")
         ).flatMap { regex -> regex.findAll(fixed).map { ContactRoleResolverV3517.normalizePhone(it.value) } }
 
-        // 줄바꿈/공백/괄호로 쪼개진 번호도 재조합한다.
         val tokens = Regex("\\d{2,4}").findAll(fixed).map { it.value }.toList()
         val rebuilt = sequence {
             for (i in tokens.indices) {
