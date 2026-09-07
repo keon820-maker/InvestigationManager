@@ -251,6 +251,7 @@ import java.util.Locale
     f("대출종류",c.loanType){c.copy(loanType=it)}
     f("물건종류",c.propertyType){c.copy(propertyType=it)}
     f("임차인 주소(물건 소재지)",c.propertyAddress){c.copy(propertyAddress=it)}
+    TenantEditorV3513(c.tenantsJson){on(c.copy(tenantsJson=it))}
     f("물건소유자",c.ownerName){c.copy(ownerName=it)}
     f("주민번호",c.ownerResidentNo){c.copy(ownerResidentNo=it)}
     f("소유자 연락처",c.ownerPhone){c.copy(ownerPhone=it)}

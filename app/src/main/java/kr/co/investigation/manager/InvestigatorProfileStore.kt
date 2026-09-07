@@ -2,6 +2,8 @@ package kr.co.investigation.manager
 
 import android.content.Context
 import kr.co.investigation.manager.data.InvestigationCase
+import org.json.JSONArray
+import org.json.JSONObject
 
 data class InvestigatorProfile(
     val name: String = "",
@@ -12,11 +14,44 @@ data class InvestigatorProfile(
 
     fun applyTo(value: InvestigationCase): InvestigationCase {
         if (!isConfigured) return value
+        val investigatorDigits = phone.filter(Char::isDigit)
+        fun clearIfInvestigator(candidate: String): String =
+            if (candidate.filter(Char::isDigit) == investigatorDigits) "" else candidate
+
         return value.copy(
             investigator = name.trim(),
             investigatorPhone = formatPhone(phone),
-            investigatorFax = ""
+            investigatorFax = "",
+            phone = clearIfInvestigator(value.phone),
+            mobile = clearIfInvestigator(value.mobile),
+            ownerPhone = clearIfInvestigator(value.ownerPhone),
+            tenantsJson = sanitizeTenantPhones(value.tenantsJson, investigatorDigits)
         )
+    }
+
+    private fun sanitizeTenantPhones(json: String, investigatorDigits: String): String {
+        if (investigatorDigits.isBlank()) return json
+        return runCatching {
+            val source = JSONArray(json.ifBlank { "[]" })
+            val out = JSONArray()
+            for (i in 0 until source.length()) {
+                val original = source.optJSONObject(i)
+                if (original == null) {
+                    out.put(source.opt(i))
+                    continue
+                }
+                val copy = JSONObject(original.toString())
+                val phoneKeys = listOf("phone", "mobile")
+                phoneKeys.forEach { key ->
+                    val candidate = copy.optString(key)
+                    if (candidate.filter(Char::isDigit) == investigatorDigits) {
+                        copy.put(key, "")
+                    }
+                }
+                out.put(copy)
+            }
+            out.toString()
+        }.getOrDefault(json)
     }
 
     private fun formatPhone(value: String): String {
