@@ -52,11 +52,14 @@ object NotesTypoRepairV29 {
         for (line in sourceLines) {
             val inlineHeaderStart = findInlineNotesHeaderStart(line)
             if (inlineHeaderStart >= 0) {
-                val prefix = line.substring(0, inlineHeaderStart)
-                    .trim()
-                    .trimEnd('.', ',', '·', 'ㆍ')
-                    .trim()
-                if (prefix.isNotBlank()) cleaned += prefix
+                val rawPrefix = line.substring(0, inlineHeaderStart).trim()
+                val sectionMarkerOnly = rawPrefix.matches(Regex("^[0-9A-Za-z가-힣]{1,2}[.)．:]?$"))
+                if (!sectionMarkerOnly) {
+                    val prefix = rawPrefix
+                        .trimEnd('.', ',', '·', 'ㆍ')
+                        .trim()
+                    if (prefix.isNotBlank()) cleaned += prefix
+                }
                 if (cleaned.isNotEmpty()) break
                 continue
             }
