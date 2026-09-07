@@ -107,6 +107,53 @@ class OcrRegressionV354Test {
     }
 
     @Test
+    fun inlineHeaderWithCheonAndSiTyposDropsSecondBlock() {
+        val duplicated = """
+            본인거주
+            보증금:0
+            월임차료:0. 기타요천 시항
+            본인기주
+            월임차료:0
+        """.trimIndent()
+
+        val base = OcrService.OcrResult("", InvestigationCase(year = 2026, requestNotes = duplicated), true, "")
+        val fixed = NotesTypoRepairV29.repair(base).parsed.requestNotes
+        assertEquals("본인거주\n보증금:0\n월임차료:0", fixed)
+    }
+
+    @Test
+    fun inlineHeaderWithSiForSaAlsoDropsSecondBlock() {
+        val duplicated = """
+            계약 확인 요청드립니다.
+            보증금:150000000
+            월임차료:0
+            임대차종료일자:20280928. 기타요청 시항
+            계약 흑인 요청드립니다.
+        """.trimIndent()
+
+        val base = OcrService.OcrResult("", InvestigationCase(year = 2026, requestNotes = duplicated), true, "")
+        val fixed = NotesTypoRepairV29.repair(base).parsed.requestNotes
+        assertEquals(
+            "계약 확인 요청드립니다.\n보증금:150000000\n월임차료:0\n임대차종료일자:20280928",
+            fixed
+        )
+    }
+
+    @Test
+    fun shortFooterSealNoiseAfterRentLineIsDropped() {
+        val notes = """
+            퇴거 후 임대차조사 진행요청드립니다.
+            보증금:0
+            월임차료:0
+            초인94리
+        """.trimIndent()
+
+        val base = OcrService.OcrResult("", InvestigationCase(year = 2026, requestNotes = notes), true, "")
+        val fixed = NotesTypoRepairV29.repair(base).parsed.requestNotes
+        assertEquals("퇴거 후 임대차조사 진행요청드립니다.\n보증금:0\n월임차료:0", fixed)
+    }
+
+    @Test
     fun leaseInvestigationTypoIsCorrectedWithoutHeader() {
         val notes = "기 대출건으로 임데치조시 부탁드립니다."
         val base = OcrService.OcrResult("", InvestigationCase(year = 2026, requestNotes = notes), true, "")
