@@ -58,7 +58,10 @@ object OcrService {
             val spatialRescued = SpatialRescueRepairV357.repair(alignedDocument, addressFixed)
             // 전체 라벨 복구 과정에서 상단 조사담당자 전화/하단 영업점 전화/옆 셀 라벨이 다른 필드로 새는 경우를 다시 제거한다.
             val leakFixed = SpatialLeakRepairV358.repair(alignedDocument, spatialRescued)
-            excludeInvestigator(leakFixed)
+            // v0.35.8에서 잘못된 번호를 제거한 뒤 실제 대상자/소유자 번호까지 공란이 된 경우,
+            // 대상자/물건소유자 행의 라벨과 같은 줄을 다시 읽어 안전하게 채운다.
+            val contactsRecovered = ContactRecoveryRepairV359.repair(alignedDocument, leakFixed)
+            excludeInvestigator(contactsRecovered)
         } finally {
             if (alignedDocument.bitmap !== normalizedDocument.bitmap && !alignedDocument.bitmap.isRecycled) {
                 alignedDocument.bitmap.recycle()
