@@ -54,14 +54,25 @@ object OcrService {
             val final = FinalOcrRepairV26.repair(alignedDocument, tenants)
             val notesFixed = NotesTypoRepairV29.repair(final)
             val addressFixed = AddressTypoRepairV355.repair(notesFixed)
+
+            // 전체 결과가 대체로 정상이어도 소유자/영업점 정보만 빠진 경우를 먼저 보강한다.
+            // 보강 표식은 바로 뒤 SpatialLeakRepair가 연락처 교차누수를 다시 검증하도록 한다.
+            val missingCoreRecovered = MissingCoreFieldRecoveryV3512.repair(alignedDocument, addressFixed)
+
             // 좌표 보정이 잘못된 표를 잡아 한 행씩 밀린 경우에는 마지막에 전체 페이지 라벨 좌표로 복구한다.
-            val spatialRescued = SpatialRescueRepairV357.repair(alignedDocument, addressFixed)
+            val spatialRescued = SpatialRescueRepairV357.repair(alignedDocument, missingCoreRecovered)
             // 전체 라벨 복구 과정에서 상단 조사담당자 전화/하단 영업점 전화/옆 셀 라벨이 다른 필드로 새는 경우를 다시 제거한다.
             val leakFixed = SpatialLeakRepairV358.repair(alignedDocument, spatialRescued)
             // v0.35.8에서 잘못된 번호를 제거한 뒤 실제 대상자/소유자 번호까지 공란이 된 경우,
             // 대상자/물건소유자 행의 라벨과 같은 줄을 다시 읽어 안전하게 채운다.
             val contactsRecovered = ContactRecoveryRepairV359.repair(alignedDocument, leakFixed)
-            excludeInvestigator(contactsRecovered)
+
+            // 후반 공간 복구가 더 긴 원문 후보를 선택하면서 이전에 제거한 중복 기타요청사항이나
+            // 주소 OCR 오기를 다시 가져올 수 있으므로 저장 직전 한 번 더 동일 보정을 적용한다.
+            val finalNotes = NotesTypoRepairV29.repair(contactsRecovered)
+            val finalAddresses = AddressTypoRepairV355.repair(finalNotes)
+            val consistent = FinalResultConsistencyV3512.repair(finalAddresses)
+            excludeInvestigator(consistent)
         } finally {
             if (alignedDocument.bitmap !== normalizedDocument.bitmap && !alignedDocument.bitmap.isRecycled) {
                 alignedDocument.bitmap.recycle()
