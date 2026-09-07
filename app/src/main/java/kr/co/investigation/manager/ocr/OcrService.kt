@@ -56,7 +56,9 @@ object OcrService {
             val addressFixed = AddressTypoRepairV355.repair(notesFixed)
             // 좌표 보정이 잘못된 표를 잡아 한 행씩 밀린 경우에는 마지막에 전체 페이지 라벨 좌표로 복구한다.
             val spatialRescued = SpatialRescueRepairV357.repair(alignedDocument, addressFixed)
-            excludeInvestigator(spatialRescued)
+            // 전체 라벨 복구 과정에서 상단 조사담당자 전화/하단 영업점 전화/옆 셀 라벨이 다른 필드로 새는 경우를 다시 제거한다.
+            val leakFixed = SpatialLeakRepairV358.repair(alignedDocument, spatialRescued)
+            excludeInvestigator(leakFixed)
         } finally {
             if (alignedDocument.bitmap !== normalizedDocument.bitmap && !alignedDocument.bitmap.isRecycled) {
                 alignedDocument.bitmap.recycle()
