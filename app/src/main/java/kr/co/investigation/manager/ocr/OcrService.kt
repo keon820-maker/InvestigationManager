@@ -72,7 +72,9 @@ object OcrService {
             val finalNotes = NotesTypoRepairV29.repair(contactsRecovered)
             val finalAddresses = AddressTypoRepairV355.repair(finalNotes)
             val consistent = FinalResultConsistencyV3512.repair(finalAddresses)
-            excludeInvestigator(consistent)
+            // 후반 복구 단계가 임차인 JSON을 다시 건드려도 허위 라벨/빈 행이 저장되지 않게 최종 재검증한다.
+            val finalTenants = TenantResultSanitizer.repair(consistent)
+            excludeInvestigator(finalTenants)
         } finally {
             if (alignedDocument.bitmap !== normalizedDocument.bitmap && !alignedDocument.bitmap.isRecycled) {
                 alignedDocument.bitmap.recycle()
