@@ -24,8 +24,6 @@ object OcrService {
     }
 
     private suspend fun recognizeCase(normalizedDocument: DocumentNormalizer.Result): OcrResult {
-        // 실제 종이 외곽이 잘 잡혀도 인쇄 위치/여백 차이 때문에 고정 셀 좌표가 밀릴 수 있다.
-        // 모든 OCR/보정 패스가 동일한 중앙표 기준 bitmap을 사용하도록 마지막으로 한 번 정렬한다.
         val alignedDocument = TemplateAnchorNormalizer.realign(normalizedDocument)
         return try {
             val base = AdaptiveOcr.recognizeCase(alignedDocument)
@@ -47,37 +45,26 @@ object OcrService {
             val footer = FooterOcrRepair.repair(alignedDocument, base)
             val notes = NotesOcrRepair.repair(alignedDocument, footer)
             val common = CommonResultRepair.repair(notes)
-            // 조사담당자 영역은 고정 로컬 프로필을 사용하므로 추가 OCR 패스에서 완전히 제외한다.
             val structured = StructuredFieldOcrRepair.repair(alignedDocument, common)
             val targetTenant = TargetTenantOcrRepair.repair(alignedDocument, structured)
             val tenants = TenantResultSanitizer.repair(targetTenant)
             val final = FinalOcrRepairV26.repair(alignedDocument, tenants)
             val notesFixed = NotesTypoRepairV29.repair(final)
             val addressFixed = AddressTypoRepairV355.repair(notesFixed)
-
-            // 전체 결과가 대체로 정상이어도 소유자/영업점 정보만 빠진 경우를 먼저 보강한다.
-            // 보강 표식은 바로 뒤 SpatialLeakRepair가 연락처 교차누수를 다시 검증하도록 한다.
             val missingCoreRecovered = MissingCoreFieldRecoveryV3512.repair(alignedDocument, addressFixed)
-
-            // 좌표 보정이 잘못된 표를 잡아 한 행씩 밀린 경우에는 마지막에 전체 페이지 라벨 좌표로 복구한다.
             val spatialRescued = SpatialRescueRepairV357.repair(alignedDocument, missingCoreRecovered)
-            // 전체 라벨 복구 과정에서 상단 조사담당자 전화/하단 영업점 전화/옆 셀 라벨이 다른 필드로 새는 경우를 다시 제거한다.
             val leakFixed = SpatialLeakRepairV358.repair(alignedDocument, spatialRescued)
-            // 라벨 주변 행 기반 연락처 재복구.
             val contactsRecovered = ContactRecoveryRepairV359.repair(alignedDocument, leakFixed)
-
-            // 후반 공간 복구가 더 긴 원문 후보를 선택하면서 이전에 제거한 중복 기타요청사항이나
-            // 주소 OCR 오기를 다시 가져올 수 있으므로 저장 직전 한 번 더 동일 보정을 적용한다.
             val finalNotes = NotesTypoRepairV29.repair(contactsRecovered)
             val finalAddresses = AddressTypoRepairV355.repair(finalNotes)
             val consistent = FinalResultConsistencyV3512.repair(finalAddresses)
-
-            // v0.35.16: 중앙표 원근 정렬 뒤 실제 값 셀 ROI를 원본/보정/2배 확대 3회 읽는다.
-            // 채무자 핸드폰, 소유자 연락처, 임차인1이 기존 패스에서 비었을 때만 보강한다.
             val fixedCellContacts = TemplateCellContactRepairV3516.repair(alignedDocument, consistent)
 
-            // 후반 복구 단계가 임차인 JSON을 다시 건드려도 허위 라벨/빈 행이 저장되지 않게 최종 재검증한다.
-            val finalTenants = TenantResultSanitizer.repair(fixedCellContacts)
+            // v0.35.17: 실기기에서 채무자 번호가 소유자 연락처로 들어간 사례를 역할별 셀 재OCR로 교정한다.
+            // 기존 값이 비어 있을 때만 채우는 것이 아니라, 소유자 번호가 채무자 모바일과 같으면 교차누수로 보고 교체한다.
+            val roleMappedContacts = ContactRoleMappingRepairV3517.repair(alignedDocument, fixedCellContacts)
+
+            val finalTenants = TenantResultSanitizer.repair(roleMappedContacts)
             excludeInvestigator(finalTenants)
         } finally {
             if (alignedDocument.bitmap !== normalizedDocument.bitmap && !alignedDocument.bitmap.isRecycled) {
