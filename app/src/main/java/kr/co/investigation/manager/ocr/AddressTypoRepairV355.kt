@@ -18,11 +18,11 @@ object AddressTypoRepairV355 {
                 ownerAddress = owner
             ),
             rawText = base.rawText + buildString {
-                append("\n\n--- 주소 OCR 오기 보정 v0.35.12 ---\n")
+                append("\n\n--- 주소 OCR 오기 보정 v0.35.22 ---\n")
                 append("물건소재지 확정 : ").append(property).append('\n')
                 append("소유자주소 확정 : ").append(owner).append('\n')
             },
-            preprocessMessage = base.preprocessMessage + " / 주소 OCR 오기 보정 v0.35.12"
+            preprocessMessage = base.preprocessMessage + " / 주소 OCR 오기 보정 v0.35.22"
         )
     }
 
@@ -31,6 +31,13 @@ object AddressTypoRepairV355 {
         var s = value
             .replace(Regex("\\s+"), " ")
             .trim()
+
+        // 우편번호가 주소 본문에 합쳐진 경우 지도/내비 검색에 불필요하므로 제거한다.
+        // 국내 광역 행정구역으로 시작하는 주소에만 적용해 일반 숫자 주소를 잘못 자르지 않는다.
+        s = s.replace(
+            Regex("^\\(?\\d{5}\\)?\\s+(?=(?:서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주))"),
+            ""
+        )
 
         // 행정구역 접미사 앞에서 OCR이 잘못 띄어 쓴 경우: '광주 시' -> '광주시'.
         s = s.replace(
