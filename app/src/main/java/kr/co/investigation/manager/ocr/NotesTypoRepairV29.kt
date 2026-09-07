@@ -10,11 +10,11 @@ object NotesTypoRepairV29 {
         return base.copy(
             parsed = base.parsed.copy(requestNotes = after),
             rawText = base.rawText + buildString {
-                append("\n\n--- 기타요청사항 오기 보정 v0.35.11 ---\n")
+                append("\n\n--- 기타요청사항 오기 보정 v0.35.12 ---\n")
                 append("보정 전 : ").append(before.replace('\n', ' ')).append('\n')
                 append("보정 후 : ").append(after.replace('\n', ' ')).append('\n')
             },
-            preprocessMessage = base.preprocessMessage + " / 기타요청사항 최종 중복·오기 보정 v0.35.11"
+            preprocessMessage = base.preprocessMessage + " / 기타요청사항 최종 중복·오기 보정 v0.35.12"
         )
     }
 
@@ -68,6 +68,11 @@ object NotesTypoRepairV29 {
                 if (cleaned.isNotEmpty()) break
                 continue
             }
+
+            // 하단 푸터/도장 OCR이 월임차료 뒤에 짧은 혼합문자 한 줄로 새는 경우를 제거한다.
+            // 예: `초인94리`. 일반적인 금액/기간/요청 문장은 건드리지 않는다.
+            if (looksLikeTrailingFooterNoise(line, cleaned)) continue
+
             cleaned += line
         }
 
@@ -81,18 +86,30 @@ object NotesTypoRepairV29 {
         .trim()
 
     /**
-     * v0.35.11: `임대차종료일자:20280928. 기타요청 사항`처럼 정상 내용 뒤에
-     * 두 번째 OCR 블록의 섹션명이 같은 줄로 붙는 경우를 자른다.
-     * 짧은 섹션명 패턴만 찾으므로 일반 메모 문장의 `요청` 단어에는 반응하지 않는다.
+     * v0.35.12: `기타요청 시항`, `기타요천 시항`처럼 두 글자까지 흔들리는
+     * 재헤더가 정상 마지막 줄에 붙어도 그 위치부터 두 번째 OCR 블록으로 판단한다.
      */
     private fun findInlineNotesHeaderStart(line: String): Int {
         val patterns = listOf(
-            Regex("기\\s*타\\s*요\\s*[청추침]\\s*사\\s*항"),
-            Regex("기\\s*타\\s*요\\s*청\\s*사\\s*항"),
+            Regex("기\\s*타\\s*요\\s*[청천추침]\\s*[사시]\\s*항"),
             Regex("기\\s*타\\s*요\\s*최\\s*시\\s*환"),
             Regex("기\\s*[eE]\\s*요\\s*최\\s*시\\s*환")
         )
         return patterns.mapNotNull { it.find(line)?.range?.first }.minOrNull() ?: -1
+    }
+
+    private fun looksLikeTrailingFooterNoise(line: String, cleaned: List<String>): Boolean {
+        if (cleaned.isEmpty()) return false
+        val last = canonicalLine(cleaned.last())
+        if (!last.startsWith("월임차료")) return false
+
+        val compact = line.replace(Regex("\\s+"), "")
+        if (compact.length !in 4..10) return false
+        if (line.contains(':') || line.contains('：') || line.contains("원") ||
+            line.contains("일자") || line.contains("기간") || line.contains("계약") ||
+            line.contains("요청") || line.contains("방문") || line.contains("연락")) return false
+
+        return Regex("^[가-힣]{2,4}\\d{2,4}[가-힣]{1,3}$").matches(compact)
     }
 
     private fun looksLikeNotesHeader(line: String): Boolean {
@@ -111,7 +128,8 @@ object NotesTypoRepairV29 {
         // 기존 실기기에서 확인된 더 심한 깨짐도 계속 허용한다.
         return candidate.length in 4..12 && candidate.startsWith("기") &&
             (candidate.contains("요최시") || candidate.contains("요청사") ||
-                candidate.contains("요침사") || candidate.contains("요시환"))
+                candidate.contains("요침사") || candidate.contains("요시환") ||
+                candidate.contains("요천시"))
     }
 
     private fun editDistance(a: String, b: String): Int {

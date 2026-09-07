@@ -18,11 +18,11 @@ object AddressTypoRepairV355 {
                 ownerAddress = owner
             ),
             rawText = base.rawText + buildString {
-                append("\n\n--- 주소 OCR 오기 보정 v0.35.5 ---\n")
+                append("\n\n--- 주소 OCR 오기 보정 v0.35.12 ---\n")
                 append("물건소재지 확정 : ").append(property).append('\n')
                 append("소유자주소 확정 : ").append(owner).append('\n')
             },
-            preprocessMessage = base.preprocessMessage + " / 주소 OCR 오기 보정 v0.35.5"
+            preprocessMessage = base.preprocessMessage + " / 주소 OCR 오기 보정 v0.35.12"
         )
     }
 
@@ -45,6 +45,9 @@ object AddressTypoRepairV355 {
             .replace(Regex("대\\s*에\\s*뜨\\s*르"), "디에뜨르")
             .replace(Regex("송\\s*피\\s*파\\s*동"), "송파동")
             .replace(Regex("송\\s*파\\s*피\\s*동"), "송파동")
+            .replace(Regex("주원\\s*히\\s*우스"), "주원하우스")
+            // '푸르지오아파트'의 '아파트'가 '오피트'로 흔들린 경우만 제한적으로 복원한다.
+            .replace(Regex("푸르지오\\s*오피트(?=\\s|\\d|$)"), "푸르지오아파트")
 
         // '디에뜨르 A 101호'에서 가운데 1이 누락되어 'A01호'로 읽히는 실기기 패턴.
         // 특정 전체 주소를 저장하지 않고 해당 건물명+동/호 표기 조합에서만 제한적으로 보정한다.
