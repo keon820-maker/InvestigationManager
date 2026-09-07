@@ -17,18 +17,9 @@ class OcrRegressionV354Test {
             울은치료:0
         """.trimIndent()
 
-        val base = OcrService.OcrResult(
-            rawText = "",
-            parsed = InvestigationCase(year = 2026, requestNotes = duplicated),
-            normalized = true,
-            preprocessMessage = ""
-        )
-
+        val base = OcrService.OcrResult("", InvestigationCase(year = 2026, requestNotes = duplicated), true, "")
         val fixed = NotesTypoRepairV29.repair(base).parsed.requestNotes
-        assertEquals(
-            "9/7 대출 실행 후 본인 입주 사실 확인 요청드립니다.\n보증금:0\n월임차료:0",
-            fixed
-        )
+        assertEquals("9/7 대출 실행 후 본인 입주 사실 확인 요청드립니다.\n보증금:0\n월임차료:0", fixed)
     }
 
     @Test
@@ -41,18 +32,9 @@ class OcrRegressionV354Test {
             9/7 대출 실행 후 본인 입주 사실 흑인 요청드립니 다
         """.trimIndent()
 
-        val base = OcrService.OcrResult(
-            rawText = "",
-            parsed = InvestigationCase(year = 2026, requestNotes = duplicated),
-            normalized = true,
-            preprocessMessage = ""
-        )
-
+        val base = OcrService.OcrResult("", InvestigationCase(year = 2026, requestNotes = duplicated), true, "")
         val fixed = NotesTypoRepairV29.repair(base).parsed.requestNotes
-        assertEquals(
-            "9/7 대출 실행 후 본인 입주 사실 확인 요청드립니다.\n보증금:0\n월임차료:0",
-            fixed
-        )
+        assertEquals("9/7 대출 실행 후 본인 입주 사실 확인 요청드립니다.\n보증금:0\n월임차료:0", fixed)
     }
 
     @Test
@@ -63,13 +45,7 @@ class OcrRegressionV354Test {
             보증금:0
         """.trimIndent()
 
-        val base = OcrService.OcrResult(
-            rawText = "",
-            parsed = InvestigationCase(year = 2026, requestNotes = notes),
-            normalized = true,
-            preprocessMessage = ""
-        )
-
+        val base = OcrService.OcrResult("", InvestigationCase(year = 2026, requestNotes = notes), true, "")
         val fixed = NotesTypoRepairV29.repair(base).parsed.requestNotes
         assertEquals("방문 전 연락 부탁드립니다.\n보증금:0", fixed)
     }
@@ -84,16 +60,29 @@ class OcrRegressionV354Test {
             기 대출건으로 임데치조시 부탁드립니다.
         """.trimIndent()
 
-        val base = OcrService.OcrResult(
-            rawText = "",
-            parsed = InvestigationCase(year = 2026, requestNotes = duplicated),
-            normalized = true,
-            preprocessMessage = ""
-        )
+        val base = OcrService.OcrResult("", InvestigationCase(year = 2026, requestNotes = duplicated), true, "")
+        val fixed = NotesTypoRepairV29.repair(base).parsed.requestNotes
+        assertEquals("기 대출건으로 임대차조사 부탁드립니다.\n보증금:0\n월임차료:0", fixed)
+    }
 
+    @Test
+    fun hangulSectionMarkerAndOneCharacterHeaderTypoDropsRepeatedBlock() {
+        val duplicated = """
+            임대인께 방문 전 연락부탁드립니다.
+            보증금:100000000
+            월임차료:600000
+            임대차시작일자:20261002
+            임대차종료일자:20281002
+            다. 기타요추 사항
+            임대인께 방문 전 연락부탁드립 니다.
+            보증금:00000000.
+            울임차료:600000
+        """.trimIndent()
+
+        val base = OcrService.OcrResult("", InvestigationCase(year = 2026, requestNotes = duplicated), true, "")
         val fixed = NotesTypoRepairV29.repair(base).parsed.requestNotes
         assertEquals(
-            "기 대출건으로 임대차조사 부탁드립니다.\n보증금:0\n월임차료:0",
+            "임대인께 방문 전 연락부탁드립니다.\n보증금:100000000\n월임차료:600000\n임대차시작일자:20261002\n임대차종료일자:20281002",
             fixed
         )
     }
@@ -101,13 +90,7 @@ class OcrRegressionV354Test {
     @Test
     fun leaseInvestigationTypoIsCorrectedWithoutHeader() {
         val notes = "기 대출건으로 임데치조시 부탁드립니다."
-        val base = OcrService.OcrResult(
-            rawText = "",
-            parsed = InvestigationCase(year = 2026, requestNotes = notes),
-            normalized = true,
-            preprocessMessage = ""
-        )
-
+        val base = OcrService.OcrResult("", InvestigationCase(year = 2026, requestNotes = notes), true, "")
         val fixed = NotesTypoRepairV29.repair(base).parsed.requestNotes
         assertEquals("기 대출건으로 임대차조사 부탁드립니다.", fixed)
     }
