@@ -14,10 +14,11 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /**
- * v0.35.19
- * 고정양식 기준점 검출이 실패해도 전체 이미지 OCR 좌표의 사람 이름을 앵커로 사용한다.
- * 즉 documentDetected=false여도 채무자/소유자 이름이 이미 읽혔다면 실제 이름 행을 다시 OCR해
- * 연락처 역할을 교정한다. 이 로직은 고정 x/y 좌표에 의존하지 않는다.
+ * v0.35.20
+ * 기준점 검출 실패 상황에서도 전체 이미지의 이름 앵커를 사용한다.
+ * 채무자 행의 휴대폰 셀이 이름과 세로로 떨어져 직접 재OCR 범위에서 빠지는 경우,
+ * 같은 채무자 이름이 임차인1에서 다시 검출되고 그 임차인 전화가 정상적으로 읽혔다면
+ * 동일 인물의 번호를 채무자 휴대폰으로 안전하게 복구한다.
  */
 object AnchorContactRepairV3518 {
     private data class Hit(val text: String, val box: Rect)
@@ -26,8 +27,6 @@ object AnchorContactRepairV3518 {
         normalized: DocumentNormalizer.Result,
         base: OcrService.OcrResult
     ): OcrService.OcrResult {
-        // v0.35.18은 documentDetected=false일 때 여기서 바로 종료되어 실기기에서 절대 실행되지 않았다.
-        // 이름 앵커 방식은 전체 이미지 좌표만 있으면 동작하므로 기준점 검출 성공 여부와 분리한다.
         if (normalized.bitmap.width < 900 || normalized.bitmap.height < 1200) return base
 
         val c = base.parsed
@@ -59,7 +58,8 @@ object AnchorContactRepairV3518 {
                 .minByOrNull { it.box.centerY() }
                 ?: ownerHits.minByOrNull { it.box.centerY() }
 
-            val debtorStrip = debtorHit?.let { readStrip(client, normalized.bitmap, it.box, 0.9f, 2.8f) }.orEmpty()
+            // 채무자 영역은 이름 아래의 전화/핸드폰 셀까지 포함하도록 더 넓게 읽는다.
+            val debtorStrip = debtorHit?.let { readStrip(client, normalized.bitmap, it.box, 0.9f, 7.5f) }.orEmpty()
             val ownerStrip = ownerHit?.let { readStrip(client, normalized.bitmap, it.box, 0.9f, 2.8f) }.orEmpty()
             val tenantStrip = tenantHit?.let { readStrip(client, normalized.bitmap, it.box, 0.9f, 2.5f) }.orEmpty()
 
@@ -67,8 +67,16 @@ object AnchorContactRepairV3518 {
             val ownerPhones = phones(ownerStrip).filter { it !in excluded }
             val tenantPhones = phones(tenantStrip).filter { it !in excluded }
 
-            val detectedMobile = debtorPhones.firstOrNull { it.startsWith("01") }
-                ?: ContactRoleResolverV3517.normalizePhone(c.mobile).takeIf { it.startsWith("01") && it !in excluded }
+            val currentMobile = ContactRoleResolverV3517.normalizePhone(c.mobile)
+                .takeIf { it.startsWith("01") && it !in excluded }
+                .orEmpty()
+            val tenantMobile = tenantPhones.firstOrNull { it.startsWith("01") && it !in excluded }.orEmpty()
+
+            // 우선순위: 채무자 영역 직접 OCR -> 기존 정상값 -> 같은 이름의 임차인1 전화.
+            // 마지막 조건은 같은 이름이 문서 하단에서 실제로 두 번째 검출됐을 때만 허용한다.
+            val detectedMobile = debtorPhones.firstOrNull { it.startsWith("01") && it !in excluded }
+                ?: currentMobile.takeIf { it.isNotBlank() }
+                ?: tenantMobile.takeIf { tenantHit != null && debtorHits.size >= 2 && it.isNotBlank() }
                 .orEmpty()
 
             val curPhone = ContactRoleResolverV3517.normalizePhone(c.phone)
@@ -105,17 +113,18 @@ object AnchorContactRepairV3518 {
             base.copy(
                 parsed = fixed,
                 rawText = base.rawText + buildString {
-                    append("\n\n--- 비정렬 이름 앵커 연락처 교정 v0.35.19 ---\n")
+                    append("\n\n--- 비정렬 이름 앵커 연락처 교정 v0.35.20 ---\n")
                     append("기준점 검출 : ").append(normalized.documentDetected).append('\n')
                     append("채무자 앵커 횟수 : ").append(debtorHits.size).append('\n')
                     append("소유자 앵커 횟수 : ").append(ownerHits.size).append('\n')
-                    append("채무자 행 번호 : ").append(debtorPhones.joinToString()).append('\n')
-                    append("소유자 행 번호 : ").append(ownerPhones.joinToString()).append('\n')
-                    append("임차인 행 번호 : ").append(tenantPhones.joinToString()).append('\n')
+                    append("채무자 영역 번호 : ").append(debtorPhones.joinToString()).append('\n')
+                    append("소유자 영역 번호 : ").append(ownerPhones.joinToString()).append('\n')
+                    append("임차인 영역 번호 : ").append(tenantPhones.joinToString()).append('\n')
+                    append("임차인 동일인 폴백 : ").append(tenantHit != null && debtorHits.size >= 2).append('\n')
                     append("최종 채무자 전화/휴대폰 : ").append(fixed.phone).append(" / ").append(fixed.mobile).append('\n')
                     append("최종 소유자 연락처 : ").append(fixed.ownerPhone).append('\n')
                 },
-                preprocessMessage = base.preprocessMessage + " / 비정렬 이름 앵커 연락처 교정 v0.35.19"
+                preprocessMessage = base.preprocessMessage + " / 채무자 모바일 영역 복구 v0.35.20"
             )
         } finally {
             client.close()
@@ -139,7 +148,6 @@ object AnchorContactRepairV3518 {
             .distinctBy { "${it.box.left}:${it.box.top}:${it.box.right}:${it.box.bottom}" }
     }
 
-    /** 사람 이름이 찍힌 y좌표를 기준으로 행 전체를 넓게 다시 OCR한다. */
     private suspend fun readStrip(
         client: TextRecognizer,
         source: Bitmap,
