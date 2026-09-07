@@ -4,11 +4,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * v0.35.21: 임차인 표의 라벨/깨진 OCR이 여러 명의 사람 이름으로 증식하는 문제를 차단한다.
+ * v0.35.22: 임차인 표의 라벨/깨진 OCR이 실제 임차인으로 생성되는 문제를 차단한다.
  *
  * 단순히 '한글 2~6자'만으로 임차인을 만들지 않는다. 특히 실기기에서 임차인 표 라벨이
- * 일치리/초인/치인성일/은치인/자인/전호/일초기처럼 깨져 5~10개 행으로 생성되는 경우,
- * 전화번호가 없는 후보가 다수 발생하면 이를 OCR 표 구조 붕괴로 판단한다.
+ * 일치리/초인/치인성일/은치인/자인/전호/일초기처럼 깨지거나, '지인성명', '소유자' 같은
+ * 양식 고정 문구가 이름 칸으로 흘러 들어오는 경우를 최종 단계에서 제거한다.
  */
 object TenantResultSanitizer {
     private data class Candidate(val name: String, val phone: String)
@@ -69,14 +69,14 @@ object TenantResultSanitizer {
         return base.copy(
             parsed = fixed,
             rawText = base.rawText + buildString {
-                append("\n\n--- 임차인 구조 검증 v0.35.21 ---\n")
+                append("\n\n--- 임차인 구조 검증 v0.35.22 ---\n")
                 append("원본 후보 : ").append(source.length()).append('\n')
                 append("유효 후보 : ").append(candidates.size).append('\n')
                 append("전화번호 없는 후보 : ").append(phoneLessCount).append('\n')
                 append("다중 오검출 판단 : ").append(massHallucination).append('\n')
                 append("최종 임차인 : ").append(cleaned.length()).append('\n')
             },
-            preprocessMessage = base.preprocessMessage + " / 임차인 구조 검증 v0.35.21"
+            preprocessMessage = base.preprocessMessage + " / 임차인 구조 검증 v0.35.22"
         )
     }
 
@@ -85,16 +85,22 @@ object TenantResultSanitizer {
         if (!Regex("[가-힣]{2,6}").matches(compact)) return false
 
         val badExact = setOf(
-            "임차인", "임차인명", "성명", "스명", "전화", "전화번호", "전화번", "전호번", "전환번호", "번호",
-            "연락처", "임차인성명", "핸드폰", "핸드폰번호",
+            // 임차인 표 자체의 라벨
+            "임차인", "임차인명", "임차인성명", "성명", "스명", "전화", "전화번호", "전화번", "전호번", "전환번호", "번호",
+            "연락처", "핸드폰", "핸드폰번호", "관계", "관계인", "비고", "주소", "임차주소",
+            // 다른 역할/설명 라벨이 임차인 이름 칸으로 새는 경우
+            "소유자", "소유주", "소유자명", "소유주명", "채무자", "채무자명", "임대인", "세입자",
+            "지인", "지인명", "지인성명", "본인", "본인거주",
+            // OCR 흔들림
             "임치인", "일치인", "의치인", "리초인", "임친인", "임자인", "입차인", "임차임", "임차언",
-            "지인",
             // v0.35.20 실기기에서 확인된 임차인 표 라벨 파편
             "일치리", "초인", "치인성일", "은치인", "자인", "전호", "일초기"
         )
         if (compact in badExact) return false
         if (compact.startsWith("임차") || compact.endsWith("차인")) return false
         if (compact.contains("전화") || compact.contains("번호") || compact.contains("성명") || compact.contains("연락")) return false
+        if (compact.contains("소유자") || compact.contains("소유주") || compact.contains("채무자")) return false
+        if (compact.contains("임대인") || compact.contains("세입자") || compact.contains("지인성명")) return false
 
         if (editDistance(compact, "임차인") <= 1) return false
         if (editDistance(compact, "전화번호") <= 1) return false
