@@ -15,16 +15,9 @@ val firebaseAppId = providers.environmentVariable("FIREBASE_APP_ID").orNull.orEm
 val firebaseProjectId = providers.environmentVariable("FIREBASE_PROJECT_ID").orNull.orEmpty()
 val firebaseStorageBucket = providers.environmentVariable("FIREBASE_STORAGE_BUCKET").orNull.orEmpty()
 val firebaseWebClientId = providers.environmentVariable("FIREBASE_WEB_CLIENT_ID").orNull.orEmpty()
-val hasFirebaseConfig = listOf(
-    firebaseApiKey,
-    firebaseAppId,
-    firebaseProjectId,
-    firebaseStorageBucket,
-    firebaseWebClientId
-).all { it.isNotBlank() }
+val hasFirebaseConfig = listOf(firebaseApiKey, firebaseAppId, firebaseProjectId, firebaseStorageBucket, firebaseWebClientId).all { it.isNotBlank() }
 
-fun String.asBuildConfigString(): String = "\"" +
-    replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+fun String.asBuildConfigString(): String = "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
 android {
     namespace = "kr.co.investigation.manager"
@@ -34,16 +27,12 @@ android {
         applicationId = "kr.co.investigation.manager"
         minSdk = 28
         targetSdk = 35
-        versionCode = 44
-        versionName = "0.35.9"
+        versionCode = 45
+        versionName = "0.35.10"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // 배포 APK는 ARM 전용으로 유지한다. CI의 태블릿 가상기기 테스트에서만 x86_64를
-        // 추가해 OpenCV/지도 SDK의 중복 네이티브 라이브러리가 배포본에 포함되지 않게 한다.
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
-            if (includeEmulatorAbi) {
-                abiFilters += "x86_64"
-            }
+            if (includeEmulatorAbi) abiFilters += "x86_64"
         }
         resourceConfigurations += listOf("ko", "en")
         buildConfigField("String", "KAKAO_NATIVE_APP_KEY", "\"$kakaoNativeAppKey\"")
@@ -65,11 +54,7 @@ android {
             }
         }
     }
-    buildTypes {
-        getByName("debug") {
-            if (hasPermanentSigning) signingConfig = signingConfigs.getByName("permanent")
-        }
-    }
+    buildTypes { getByName("debug") { if (hasPermanentSigning) signingConfig = signingConfigs.getByName("permanent") } }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -92,19 +77,14 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.navigation:navigation-compose:2.8.5")
-
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
-
     implementation("com.google.mlkit:text-recognition-korean:16.0.1")
     implementation("org.opencv:opencv:4.10.0")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("com.google.code.gson:gson:2.11.0")
     implementation("com.kakao.maps.open:android:2.15.1")
-
-    // BoM 33.13 stays compatible with this app's Kotlin 2.0 compiler.
-    // Firebase Auth 24.x is built with newer Kotlin metadata and cannot be consumed safely here.
     implementation(platform("com.google.firebase:firebase-bom:33.13.0"))
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
