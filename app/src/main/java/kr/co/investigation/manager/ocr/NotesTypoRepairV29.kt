@@ -10,11 +10,11 @@ object NotesTypoRepairV29 {
         return base.copy(
             parsed = base.parsed.copy(requestNotes = after),
             rawText = base.rawText + buildString {
-                append("\n\n--- 기타요청사항 오기 보정 v0.35.10 ---\n")
+                append("\n\n--- 기타요청사항 오기 보정 v0.35.11 ---\n")
                 append("보정 전 : ").append(before.replace('\n', ' ')).append('\n')
                 append("보정 후 : ").append(after.replace('\n', ' ')).append('\n')
             },
-            preprocessMessage = base.preprocessMessage + " / 기타요청사항 최종 중복·오기 보정 v0.35.10"
+            preprocessMessage = base.preprocessMessage + " / 기타요청사항 최종 중복·오기 보정 v0.35.11"
         )
     }
 
@@ -50,6 +50,17 @@ object NotesTypoRepairV29 {
 
         val cleaned = mutableListOf<String>()
         for (line in sourceLines) {
+            val inlineHeaderStart = findInlineNotesHeaderStart(line)
+            if (inlineHeaderStart >= 0) {
+                val prefix = line.substring(0, inlineHeaderStart)
+                    .trim()
+                    .trimEnd('.', ',', '·', 'ㆍ')
+                    .trim()
+                if (prefix.isNotBlank()) cleaned += prefix
+                if (cleaned.isNotEmpty()) break
+                continue
+            }
+
             if (looksLikeNotesHeader(line)) {
                 if (cleaned.isNotEmpty()) break
                 continue
@@ -65,6 +76,21 @@ object NotesTypoRepairV29 {
     private fun canonicalLine(line: String): String = line
         .replace(Regex("[\\s.,!?·ㆍ:：]+"), "")
         .trim()
+
+    /**
+     * v0.35.11: `임대차종료일자:20280928. 기타요청 사항`처럼 정상 내용 뒤에
+     * 두 번째 OCR 블록의 섹션명이 같은 줄로 붙는 경우를 자른다.
+     * 짧은 섹션명 패턴만 찾으므로 일반 메모 문장의 `요청` 단어에는 반응하지 않는다.
+     */
+    private fun findInlineNotesHeaderStart(line: String): Int {
+        val patterns = listOf(
+            Regex("기\\s*타\\s*요\\s*[청추침]\\s*사\\s*항"),
+            Regex("기\\s*타\\s*요\\s*청\\s*사\\s*항"),
+            Regex("기\\s*타\\s*요\\s*최\\s*시\\s*환"),
+            Regex("기\\s*[eE]\\s*요\\s*최\\s*시\\s*환")
+        )
+        return patterns.mapNotNull { it.find(line)?.range?.first }.minOrNull() ?: -1
+    }
 
     private fun looksLikeNotesHeader(line: String): Boolean {
         val compact = line.replace(Regex("[^가-힣A-Za-z0-9]"), "")
