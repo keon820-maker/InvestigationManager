@@ -23,4 +23,39 @@ class InvestigatorProfileTest {
         assertEquals("010-0000-0000", value.investigatorPhone)
         assertEquals("", value.investigatorFax)
     }
+
+    @Test
+    fun investigatorPhoneIsRemovedFromDebtorAndOwnerContactFields() {
+        val profile = InvestigatorProfile("테스트담당", "01053126436")
+        val value = profile.applyTo(
+            InvestigationCase(
+                year = 2026,
+                phone = "010-5312-6436",
+                mobile = "01053126436",
+                ownerPhone = "010 5312 6436"
+            )
+        )
+
+        assertEquals("", value.phone)
+        assertEquals("", value.mobile)
+        assertEquals("", value.ownerPhone)
+        assertEquals("010-5312-6436", value.investigatorPhone)
+    }
+
+    @Test
+    fun unrelatedContactNumbersArePreserved() {
+        val profile = InvestigatorProfile("테스트담당", "01053126436")
+        val value = profile.applyTo(
+            InvestigationCase(
+                year = 2026,
+                phone = "031-123-4567",
+                mobile = "010-1111-2222",
+                ownerPhone = "010-3333-4444"
+            )
+        )
+
+        assertEquals("031-123-4567", value.phone)
+        assertEquals("010-1111-2222", value.mobile)
+        assertEquals("010-3333-4444", value.ownerPhone)
+    }
 }
