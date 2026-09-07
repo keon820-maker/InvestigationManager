@@ -59,12 +59,14 @@ object OcrService {
             val finalAddresses = AddressTypoRepairV355.repair(finalNotes)
             val consistent = FinalResultConsistencyV3512.repair(finalAddresses)
             val fixedCellContacts = TemplateCellContactRepairV3516.repair(alignedDocument, consistent)
-
-            // v0.35.17: 실기기에서 채무자 번호가 소유자 연락처로 들어간 사례를 역할별 셀 재OCR로 교정한다.
-            // 기존 값이 비어 있을 때만 채우는 것이 아니라, 소유자 번호가 채무자 모바일과 같으면 교차누수로 보고 교체한다.
             val roleMappedContacts = ContactRoleMappingRepairV3517.repair(alignedDocument, fixedCellContacts)
 
-            val finalTenants = TenantResultSanitizer.repair(roleMappedContacts)
+            // v0.35.18: 고정 x/y 좌표에만 의존하지 않고, 이미 정확히 읽힌 채무자/소유자 이름의
+            // 실제 OCR 좌표를 앵커로 삼아 해당 행 전체를 다시 읽는다. 사진별 원근 잔차가 있어도
+            // 채무자·소유자·임차인의 번호 역할을 마지막 단계에서 다시 검증한다.
+            val anchorMappedContacts = AnchorContactRepairV3518.repair(alignedDocument, roleMappedContacts)
+
+            val finalTenants = TenantResultSanitizer.repair(anchorMappedContacts)
             excludeInvestigator(finalTenants)
         } finally {
             if (alignedDocument.bitmap !== normalizedDocument.bitmap && !alignedDocument.bitmap.isRecycled) {
