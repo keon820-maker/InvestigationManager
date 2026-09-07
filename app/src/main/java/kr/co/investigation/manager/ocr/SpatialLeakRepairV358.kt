@@ -90,21 +90,22 @@ object SpatialLeakRepairV358 {
         explicitOwnerAddress: String,
         headerPhones: Set<String>
     ): InvestigationCase {
-        fun usablePhone(value: String): String = value
-            .takeIf(::validPhone)
-            .takeUnless { it in headerPhones }
-            .takeUnless { managementLeak(it, current.managementNo) }
-            .orEmpty()
+        fun usablePhone(value: String): String {
+            if (!validPhone(value)) return ""
+            if (value in headerPhones) return ""
+            if (managementLeak(value, current.managementNo)) return ""
+            return value
+        }
 
         val phone = usablePhone(explicitPhone).ifBlank { usablePhone(current.phone) }
         val mobile = usablePhone(explicitMobile).ifBlank { usablePhone(current.mobile) }
 
-        val currentOwnerPhone = current.ownerPhone
-            .takeIf(::validPhone)
-            .takeUnless { it in headerPhones }
-            .takeUnless { sameNonBlank(it, current.branchPhone) }
-            .takeUnless { sameNonBlank(it, current.branchFax) }
-            .orEmpty()
+        val currentOwnerPhone = current.ownerPhone.takeIf { value ->
+            validPhone(value) &&
+                value !in headerPhones &&
+                !sameNonBlank(value, current.branchPhone) &&
+                !sameNonBlank(value, current.branchFax)
+        }.orEmpty()
         val ownerPhone = usablePhone(explicitOwnerPhone).ifBlank { currentOwnerPhone }
 
         val propertyAddress = cleanAddressLeak(explicitPropertyAddress)
@@ -219,11 +220,11 @@ object SpatialLeakRepairV358 {
 
     private fun phones(value: String): List<String> {
         val fixed = normalizeDigits(value)
-        val compact = Regex("(?<!\\d)0\\d{8,11}(?!\\d)")
+        val compactPhones = Regex("(?<!\\d)0\\d{8,11}(?!\\d)")
             .findAll(fixed)
             .map { normalizePhone(it.value) }
         val separated = phonePattern.findAll(fixed).map { normalizePhone(it.value) }
-        return (compact + separated).filter { it.isNotBlank() }.distinct().toList()
+        return (compactPhones + separated).filter { it.isNotBlank() }.distinct().toList()
     }
 
     private fun items(text: Text): List<Item> = text.textBlocks.flatMap { it.lines }
