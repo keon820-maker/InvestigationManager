@@ -31,11 +31,11 @@ class AddressTypoRepairV355Test {
             AddressTypoRepairV355.normalize("12791 경기도 광주시 테스트로 1")
         )
         assertEquals(
-            "경기도 성남시 분당구 테스트로 2",
+            "경기 성남시 분당구 테스트로 2",
             AddressTypoRepairV355.normalize("463400 경기 성남시 분당구 테스트로 2")
         )
         assertEquals(
-            "경기도 성남시 수정구 테스트로 3",
+            "경기 성남시 수정구 테스트로 3",
             AddressTypoRepairV355.normalize("461160 경기 성남시 수정구 테스트로 3")
         )
     }
