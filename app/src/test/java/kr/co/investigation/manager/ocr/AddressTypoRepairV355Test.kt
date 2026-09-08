@@ -25,14 +25,18 @@ class AddressTypoRepairV355Test {
     }
 
     @Test
-    fun removesRealisticFiveDigitPostalCodeOnlyBeforeKoreanRegion() {
+    fun removesFiveOrSixDigitPostalCodeOnlyBeforeKoreanRegion() {
         assertEquals(
-            "경기도 광주시 경충대로 1461번길 43 센트럴 푸르지오 118동 604호",
-            AddressTypoRepairV355.normalize("12791 경기도 광주시 경충대로 1461번길 43 센트럴 푸르지오 118동 604호")
+            "경기도 광주시 테스트로 1",
+            AddressTypoRepairV355.normalize("12791 경기도 광주시 테스트로 1")
         )
         assertEquals(
-            "경기도 성남시 수정구 산성대로393번길 2-7 주원하우스 4층",
-            AddressTypoRepairV355.normalize("13147 경기도 성남시 수정구 산성대로393번길 2-7 주원하우스 4층")
+            "경기도 성남시 분당구 테스트로 2",
+            AddressTypoRepairV355.normalize("463400 경기 성남시 분당구 테스트로 2")
+        )
+        assertEquals(
+            "경기도 성남시 수정구 테스트로 3",
+            AddressTypoRepairV355.normalize("461160 경기 성남시 수정구 테스트로 3")
         )
     }
 
@@ -41,6 +45,10 @@ class AddressTypoRepairV355Test {
         assertEquals(
             "12345 테스트건물 1층",
             AddressTypoRepairV355.normalize("12345 테스트건물 1층")
+        )
+        assertEquals(
+            "123456 테스트건물 2층",
+            AddressTypoRepairV355.normalize("123456 테스트건물 2층")
         )
     }
 }
