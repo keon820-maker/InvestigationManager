@@ -14,6 +14,8 @@ class TenantResultSanitizerTest {
             .put(JSONObject().put("name", "지인성명").put("phone", ""))
             .put(JSONObject().put("name", "소유자").put("phone", ""))
             .put(JSONObject().put("name", "소유사").put("phone", ""))
+            .put(JSONObject().put("name", "물건").put("phone", ""))
+            .put(JSONObject().put("name", "수소").put("phone", ""))
 
         val repaired = TenantResultSanitizer.repair(resultWithTenants(input.toString()))
         val tenants = JSONArray(repaired.parsed.tenantsJson)
@@ -25,6 +27,7 @@ class TenantResultSanitizerTest {
     fun dropsWholeRowWhenLabelHasValidPhoneFromAnotherField() {
         val input = JSONArray()
             .put(JSONObject().put("name", "지인성명").put("phone", "031-768-4432"))
+            .put(JSONObject().put("name", "물건").put("phone", "010-1234-5678"))
 
         val repaired = TenantResultSanitizer.repair(resultWithTenants(input.toString()))
         val tenants = JSONArray(repaired.parsed.tenantsJson)
@@ -61,7 +64,7 @@ class TenantResultSanitizerTest {
     fun rejectsRoleAndFieldLabelsButKeepsPlausibleRealNames() {
         val labels = listOf(
             "소유자", "소유주", "소유사", "채무자", "지인성명", "임대인", "세입자",
-            "전화번호", "성명", "본인거주"
+            "전화번호", "성명", "본인거주", "물건", "물건소유자", "수소"
         )
         labels.forEach { label ->
             assertTrue("label must be rejected: $label", !TenantResultSanitizer.validTenantName(label))
