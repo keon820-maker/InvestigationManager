@@ -17,6 +17,7 @@ class TenantResultSanitizerTest {
             .put(JSONObject().put("name", "물건").put("phone", ""))
             .put(JSONObject().put("name", "수소").put("phone", ""))
             .put(JSONObject().put("name", "경기도").put("phone", "010-1234-5678"))
+            .put(JSONObject().put("name", "성영").put("phone", ""))
 
         val repaired = TenantResultSanitizer.repair(resultWithTenants(input.toString()))
         val tenants = JSONArray(repaired.parsed.tenantsJson)
@@ -35,6 +36,41 @@ class TenantResultSanitizerTest {
         val tenants = JSONArray(repaired.parsed.tenantsJson)
 
         assertEquals(0, tenants.length())
+    }
+
+    @Test
+    fun dropsAdministrativeTokenLeakedFromActualAddress() {
+        val input = JSONArray()
+            .put(JSONObject().put("name", "성남시").put("phone", ""))
+            .put(JSONObject().put("name", "홍길동").put("phone", "010-1234-5678"))
+
+        val repaired = TenantResultSanitizer.repair(
+            resultWithTenants(
+                tenantsJson = input.toString(),
+                propertyAddress = "경기도 성남시 분당구 테스트동 테스트아파트 101동 202호"
+            )
+        )
+        val tenants = JSONArray(repaired.parsed.tenantsJson)
+
+        assertEquals(1, tenants.length())
+        assertEquals("홍길동", tenants.getJSONObject(0).getString("name"))
+    }
+
+    @Test
+    fun doesNotDropPlausibleNameJustBecauseAddressContainsOtherTokens() {
+        val input = JSONArray()
+            .put(JSONObject().put("name", "김민수").put("phone", ""))
+
+        val repaired = TenantResultSanitizer.repair(
+            resultWithTenants(
+                tenantsJson = input.toString(),
+                propertyAddress = "경기도 성남시 분당구 테스트동 테스트아파트 101동 202호"
+            )
+        )
+        val tenants = JSONArray(repaired.parsed.tenantsJson)
+
+        assertEquals(1, tenants.length())
+        assertEquals("김민수", tenants.getJSONObject(0).getString("name"))
     }
 
     @Test
@@ -66,7 +102,7 @@ class TenantResultSanitizerTest {
     fun rejectsRoleFieldAndRegionLabelsButKeepsPlausibleRealNames() {
         val labels = listOf(
             "소유자", "소유주", "소유사", "채무자", "지인성명", "임대인", "세입자",
-            "전화번호", "성명", "본인거주", "물건", "물건소유자", "수소", "경기도"
+            "전화번호", "성명", "성영", "본인거주", "물건", "물건소유자", "수소", "경기도"
         )
         labels.forEach { label ->
             assertTrue("label must be rejected: $label", !TenantResultSanitizer.validTenantName(label))
@@ -76,9 +112,18 @@ class TenantResultSanitizerTest {
         assertTrue(TenantResultSanitizer.validTenantName("소유진"))
     }
 
-    private fun resultWithTenants(tenantsJson: String): OcrService.OcrResult = OcrService.OcrResult(
+    private fun resultWithTenants(
+        tenantsJson: String,
+        propertyAddress: String = "",
+        ownerAddress: String = ""
+    ): OcrService.OcrResult = OcrService.OcrResult(
         rawText = "",
-        parsed = InvestigationCase(year = 2026, tenantsJson = tenantsJson),
+        parsed = InvestigationCase(
+            year = 2026,
+            tenantsJson = tenantsJson,
+            propertyAddress = propertyAddress,
+            ownerAddress = ownerAddress
+        ),
         normalized = true,
         preprocessMessage = ""
     )
