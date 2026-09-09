@@ -14,11 +14,9 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /**
- * v0.35.20
- * 기준점 검출 실패 상황에서도 전체 이미지의 이름 앵커를 사용한다.
- * 채무자 행의 휴대폰 셀이 이름과 세로로 떨어져 직접 재OCR 범위에서 빠지는 경우,
- * 같은 채무자 이름이 임차인1에서 다시 검출되고 그 임차인 전화가 정상적으로 읽혔다면
- * 동일 인물의 번호를 채무자 휴대폰으로 안전하게 복구한다.
+ * v0.35.25
+ * 이름 앵커 연락처 교정에서 소유자/기타요청사항의 같은 이름을 임차인으로 오인하지 않도록
+ * 임차인 표의 세로 영역을 제한한다. 채무자와 소유자가 동일인이면 소유자 셀에 반복된 동일 번호는 보존한다.
  */
 object AnchorContactRepairV3518 {
     private data class Hit(val text: String, val box: Rect)
@@ -51,14 +49,16 @@ object AnchorContactRepairV3518 {
 
             val debtorHit = debtorHits.minByOrNull { it.box.centerY() }
             val tenantHit = debtorHits
-                .filter { debtorHit == null || it.box.centerY() > debtorHit.box.centerY() + normalized.bitmap.height * 0.10 }
+                .filter { hit ->
+                    (debtorHit == null || hit.box.centerY() > debtorHit.box.centerY() + normalized.bitmap.height * 0.10) &&
+                        isTenantBandY(hit.box.centerY(), normalized.bitmap.height)
+                }
                 .maxByOrNull { it.box.centerY() }
             val ownerHit = ownerHits
                 .filter { debtorHit == null || it.box.centerY() > debtorHit.box.centerY() + normalized.bitmap.height * 0.06 }
                 .minByOrNull { it.box.centerY() }
                 ?: ownerHits.minByOrNull { it.box.centerY() }
 
-            // 채무자 영역은 이름 아래의 전화/핸드폰 셀까지 포함하도록 더 넓게 읽는다.
             val debtorStrip = debtorHit?.let { readStrip(client, normalized.bitmap, it.box, 0.9f, 7.5f) }.orEmpty()
             val ownerStrip = ownerHit?.let { readStrip(client, normalized.bitmap, it.box, 0.9f, 2.8f) }.orEmpty()
             val tenantStrip = tenantHit?.let { readStrip(client, normalized.bitmap, it.box, 0.9f, 2.5f) }.orEmpty()
@@ -72,11 +72,9 @@ object AnchorContactRepairV3518 {
                 .orEmpty()
             val tenantMobile = tenantPhones.firstOrNull { it.startsWith("01") && it !in excluded }.orEmpty()
 
-            // 우선순위: 채무자 영역 직접 OCR -> 기존 정상값 -> 같은 이름의 임차인1 전화.
-            // 마지막 조건은 같은 이름이 문서 하단에서 실제로 두 번째 검출됐을 때만 허용한다.
             val detectedMobile = debtorPhones.firstOrNull { it.startsWith("01") && it !in excluded }
                 ?: currentMobile.takeIf { it.isNotBlank() }
-                ?: tenantMobile.takeIf { tenantHit != null && debtorHits.size >= 2 && it.isNotBlank() }
+                ?: tenantMobile.takeIf { tenantHit != null && it.isNotBlank() }
                 .orEmpty()
 
             val curPhone = ContactRoleResolverV3517.normalizePhone(c.phone)
@@ -87,11 +85,15 @@ object AnchorContactRepairV3518 {
                 else -> curPhone
             }
 
-            val ownerFromAnchor = ownerPhones.firstOrNull { it != detectedMobile && it != fixedPhone }
+            val sameOwnerAsDebtor = owner.isNotBlank() && debtor.isNotBlank() && owner == debtor
+            val ownerFromAnchor = ownerPhones.firstOrNull {
+                sameOwnerAsDebtor || (it != detectedMobile && it != fixedPhone)
+            }
             val curOwner = ContactRoleResolverV3517.normalizePhone(c.ownerPhone)
             val fixedOwner = when {
                 ownerFromAnchor != null -> ownerFromAnchor
-                curOwner.isNotBlank() && curOwner != detectedMobile && curOwner != fixedPhone && curOwner !in excluded -> curOwner
+                curOwner.isNotBlank() && curOwner !in excluded &&
+                    (sameOwnerAsDebtor || (curOwner != detectedMobile && curOwner != fixedPhone)) -> curOwner
                 else -> ""
             }
 
@@ -113,22 +115,28 @@ object AnchorContactRepairV3518 {
             base.copy(
                 parsed = fixed,
                 rawText = base.rawText + buildString {
-                    append("\n\n--- 비정렬 이름 앵커 연락처 교정 v0.35.20 ---\n")
+                    append("\n\n--- 비정렬 이름 앵커 연락처 교정 v0.35.25 ---\n")
                     append("기준점 검출 : ").append(normalized.documentDetected).append('\n')
                     append("채무자 앵커 횟수 : ").append(debtorHits.size).append('\n')
                     append("소유자 앵커 횟수 : ").append(ownerHits.size).append('\n')
+                    append("임차인 표 앵커 : ").append(tenantHit != null).append('\n')
                     append("채무자 영역 번호 : ").append(debtorPhones.joinToString()).append('\n')
                     append("소유자 영역 번호 : ").append(ownerPhones.joinToString()).append('\n')
                     append("임차인 영역 번호 : ").append(tenantPhones.joinToString()).append('\n')
-                    append("임차인 동일인 폴백 : ").append(tenantHit != null && debtorHits.size >= 2).append('\n')
                     append("최종 채무자 전화/휴대폰 : ").append(fixed.phone).append(" / ").append(fixed.mobile).append('\n')
                     append("최종 소유자 연락처 : ").append(fixed.ownerPhone).append('\n')
                 },
-                preprocessMessage = base.preprocessMessage + " / 채무자 모바일 영역 복구 v0.35.20"
+                preprocessMessage = base.preprocessMessage + " / 이름 앵커 연락처 검증 v0.35.25"
             )
         } finally {
             client.close()
         }
+    }
+
+    internal fun isTenantBandY(centerY: Int, imageHeight: Int): Boolean {
+        if (imageHeight <= 0) return false
+        val ratio = centerY.toFloat() / imageHeight.toFloat()
+        return ratio in 0.45f..0.70f
     }
 
     private fun collectHits(text: Text): List<Hit> = buildList {
@@ -218,12 +226,16 @@ object AnchorContactRepairV3518 {
 
         val name = oldName.takeIf(TenantResultSanitizer::validTenantName).orEmpty()
             .ifBlank { debtorName.takeIf { tenantAnchorFound && TenantResultSanitizer.validTenantName(it) }.orEmpty() }
-        val phone = oldPhone.takeIf(TenantResultSanitizer::validTenantPhone).orEmpty()
-            .ifBlank { tenantPhones.firstOrNull().orEmpty() }
-            .ifBlank { detectedMobile.takeIf { tenantAnchorFound }.orEmpty() }
+        val phone = if (name.isBlank()) {
+            ""
+        } else {
+            oldPhone.takeIf(TenantResultSanitizer::validTenantPhone).orEmpty()
+                .ifBlank { tenantPhones.firstOrNull().orEmpty() }
+                .ifBlank { detectedMobile.takeIf { tenantAnchorFound }.orEmpty() }
+        }
 
         val out = JSONArray()
-        if (name.isNotBlank() || phone.isNotBlank()) {
+        if (name.isNotBlank()) {
             out.put(JSONObject().apply { put("name", name); put("phone", phone) })
         }
         for (i in 1 until source.length().coerceAtMost(10)) source.optJSONObject(i)?.let(out::put)
