@@ -18,11 +18,11 @@ object AddressTypoRepairV355 {
                 ownerAddress = owner
             ),
             rawText = base.rawText + buildString {
-                append("\n\n--- 주소 OCR 오기 보정 v0.35.25 ---\n")
+                append("\n\n--- 주소 OCR 오기 보정 v0.35.26 ---\n")
                 append("물건소재지 확정 : ").append(property).append('\n')
                 append("소유자주소 확정 : ").append(owner).append('\n')
             },
-            preprocessMessage = base.preprocessMessage + " / 주소 OCR 오기 보정 v0.35.25"
+            preprocessMessage = base.preprocessMessage + " / 주소 OCR 오기 보정 v0.35.26"
         )
     }
 
@@ -59,8 +59,8 @@ object AddressTypoRepairV355 {
             .replace(Regex("송\\s*파\\s*피\\s*동"), "송파동")
             .replace(Regex("주원\\s*히\\s*우스"), "주원하우스")
             .replace(Regex("푸르지오\\s*오피트(?=\\s|\\d|$)"), "푸르지오아파트")
-            // '라이프아파트'의 '라이'가 숫자 20처럼 읽힌 실기기 패턴.
-            .replace(Regex("20\\s*프아파트(?=\\s|\\d|$)"), "라이프아파트")
+            // '라이프아파트'의 '라이'가 숫자 20처럼 읽히고 '프'가 '포'로 흔들리는 실기기 패턴.
+            .replace(Regex("20\\s*[프포]아파트(?=\\s|\\d|$)"), "라이프아파트")
 
         s = s.replace(
             Regex("디에뜨르\\s+[Aa]\\s*0?1호"),
