@@ -4,11 +4,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * v0.35.24: 임차인 표의 라벨/깨진 OCR이 실제 임차인으로 생성되는 문제를 차단한다.
+ * v0.35.25: 임차인 표의 라벨/주소 조각/깨진 OCR이 실제 임차인으로 생성되는 문제를 차단한다.
  *
- * 실기기에서 확인된 핵심 원칙은 '유효한 사람 이름이 없으면 임차인 행 자체를 만들지 않는다'이다.
- * 라벨이 이름 칸으로 들어오고 다른 칸의 전화번호만 정상 인식된 경우에도 전화번호만 남긴 임차인을
- * 생성하지 않는다. 또한 소유자/물건 관련 라벨의 OCR 흔들림도 제한적으로 차단한다.
+ * 핵심 원칙은 '유효한 사람 이름이 없으면 임차인 행 자체를 만들지 않는다'이다.
+ * 라벨이나 행정구역명이 이름 칸으로 들어오고 다른 칸의 전화번호만 정상 인식된 경우에도
+ * 임차인 행 전체를 제거한다.
  */
 object TenantResultSanitizer {
     private data class Candidate(val name: String, val phone: String)
@@ -16,7 +16,6 @@ object TenantResultSanitizer {
     fun repair(base: OcrService.OcrResult): OcrService.OcrResult {
         val c = base.parsed
         val source = runCatching { JSONArray(c.tenantsJson) }.getOrNull() ?: return base
-        val debtorName = c.debtorName.substringBefore('(').filter { it in '가'..'힣' }
         val candidates = mutableListOf<Candidate>()
         var changed = false
 
@@ -25,7 +24,7 @@ object TenantResultSanitizer {
             val rawName = old.optString("name").ifBlank { old.optString("tenantName") }.trim()
             val rawPhone = old.optString("phone").ifBlank { old.optString("mobile") }.trim()
 
-            // 이름이 비어 있거나 양식 라벨이면 전화번호가 정상이어도 행 전체를 버린다.
+            // 이름이 비어 있거나 양식/주소 라벨이면 전화번호가 정상이어도 행 전체를 버린다.
             if (!validTenantName(rawName)) {
                 if (rawName.isNotBlank() || rawPhone.isNotBlank()) changed = true
                 continue
@@ -37,23 +36,18 @@ object TenantResultSanitizer {
             candidates += Candidate(name, phone)
         }
 
-        // 정상 임차인 표라면 여러 행이 동시에 잡힐수록 전화번호도 함께 잡히는 비율이 높다.
-        // 3개 이상 후보 중 70% 이상이 전화번호 없이 이름만 존재하면 표 구조 붕괴 가능성이 높다.
-        // 이 경우 전화번호가 실제로 읽힌 행과 채무자와 동일한 이름만 보존한다.
+        // 3개 이상 후보 중 70% 이상이 전화번호 없는 이름뿐이면 표 구조 붕괴 가능성이 높다.
+        // 이 경우 전화번호까지 함께 확인된 행만 보존한다. 채무자 이름을 임차인으로 자동 승격하지 않는다.
         val phoneLessCount = candidates.count { it.phone.isBlank() }
         val massHallucination = candidates.size >= 3 && phoneLessCount * 10 >= candidates.size * 7
 
         val filtered = if (massHallucination) {
             changed = true
-            candidates.filter { candidate ->
-                candidate.phone.isNotBlank() ||
-                    (debtorName.isNotBlank() && candidate.name == debtorName)
-            }
+            candidates.filter { it.phone.isNotBlank() }
         } else {
             candidates
         }
 
-        // 동일한 이름/전화가 여러 줄로 중복 인식된 경우 하나만 유지한다.
         val deduped = filtered.distinctBy { it.name + "|" + it.phone }
         if (deduped.size != filtered.size) changed = true
 
@@ -70,14 +64,14 @@ object TenantResultSanitizer {
         return base.copy(
             parsed = fixed,
             rawText = base.rawText + buildString {
-                append("\n\n--- 임차인 구조 검증 v0.35.24 ---\n")
+                append("\n\n--- 임차인 구조 검증 v0.35.25 ---\n")
                 append("원본 후보 : ").append(source.length()).append('\n')
                 append("유효 이름 후보 : ").append(candidates.size).append('\n')
                 append("전화번호 없는 후보 : ").append(phoneLessCount).append('\n')
                 append("다중 오검출 판단 : ").append(massHallucination).append('\n')
                 append("최종 임차인 : ").append(cleaned.length()).append('\n')
             },
-            preprocessMessage = base.preprocessMessage + " / 임차인 구조 검증 v0.35.24"
+            preprocessMessage = base.preprocessMessage + " / 임차인 구조 검증 v0.35.25"
         )
     }
 
@@ -92,9 +86,11 @@ object TenantResultSanitizer {
             // 다른 역할/설명 라벨이 임차인 이름 칸으로 새는 경우
             "소유자", "소유주", "소유자명", "소유주명", "채무자", "채무자명", "임대인", "세입자",
             "지인", "지인명", "지인성명", "본인", "본인거주",
-            // 실기기에서 확인된 역할/필드 라벨 및 OCR 흔들림.
-            // 실제 이름과 충돌할 수 있는 포괄적 접두사 차단 대신 관찰된 값만 제한적으로 막는다.
+            // 실기기에서 확인된 역할/필드 라벨 및 OCR 흔들림
             "소유사", "소유쟈", "소유쥬", "물건", "물건소유", "물건소유자", "수소",
+            // 주소 행이 임차인 이름 셀로 미끄러져 들어온 경우
+            "경기도", "강원도", "충청북도", "충청남도", "전라북도", "전라남도", "경상북도", "경상남도", "제주도",
+            "서울시", "부산시", "대구시", "인천시", "광주시", "대전시", "울산시", "세종시",
             // 임차인 라벨 OCR 흔들림
             "임치인", "일치인", "의치인", "리초인", "임친인", "임자인", "입차인", "임차임", "임차언",
             // 이전 실기기에서 확인된 임차인 표 라벨 파편
