@@ -4,7 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * v0.35.25: 임차인 표의 라벨/주소 조각/깨진 OCR이 실제 임차인으로 생성되는 문제를 차단한다.
+ * v0.35.26: 임차인 표의 라벨/주소 조각/깨진 OCR이 실제 임차인으로 생성되는 문제를 차단한다.
  *
  * 핵심 원칙은 '유효한 사람 이름이 없으면 임차인 행 자체를 만들지 않는다'이다.
  * 라벨이나 행정구역명이 이름 칸으로 들어오고 다른 칸의 전화번호만 정상 인식된 경우에도
@@ -16,6 +16,7 @@ object TenantResultSanitizer {
     fun repair(base: OcrService.OcrResult): OcrService.OcrResult {
         val c = base.parsed
         val source = runCatching { JSONArray(c.tenantsJson) }.getOrNull() ?: return base
+        val addressTokens = addressTokens(c.propertyAddress, c.ownerAddress)
         val candidates = mutableListOf<Candidate>()
         var changed = false
 
@@ -25,7 +26,9 @@ object TenantResultSanitizer {
             val rawPhone = old.optString("phone").ifBlank { old.optString("mobile") }.trim()
 
             // 이름이 비어 있거나 양식/주소 라벨이면 전화번호가 정상이어도 행 전체를 버린다.
-            if (!validTenantName(rawName)) {
+            // v0.35.26: '성남시'처럼 광역도보다 하위의 행정구역 조각도 실제 주소 필드에
+            // 동일 토큰이 있을 때만 주소 누수로 판단한다. 사람 이름을 포괄적으로 막지 않는다.
+            if (!validTenantName(rawName) || isAdministrativeAddressLeak(rawName, addressTokens)) {
                 if (rawName.isNotBlank() || rawPhone.isNotBlank()) changed = true
                 continue
             }
@@ -64,14 +67,14 @@ object TenantResultSanitizer {
         return base.copy(
             parsed = fixed,
             rawText = base.rawText + buildString {
-                append("\n\n--- 임차인 구조 검증 v0.35.25 ---\n")
+                append("\n\n--- 임차인 구조 검증 v0.35.26 ---\n")
                 append("원본 후보 : ").append(source.length()).append('\n')
                 append("유효 이름 후보 : ").append(candidates.size).append('\n')
                 append("전화번호 없는 후보 : ").append(phoneLessCount).append('\n')
                 append("다중 오검출 판단 : ").append(massHallucination).append('\n')
                 append("최종 임차인 : ").append(cleaned.length()).append('\n')
             },
-            preprocessMessage = base.preprocessMessage + " / 임차인 구조 검증 v0.35.25"
+            preprocessMessage = base.preprocessMessage + " / 임차인 구조 검증 v0.35.26"
         )
     }
 
@@ -81,7 +84,7 @@ object TenantResultSanitizer {
 
         val badExact = setOf(
             // 임차인 표 자체의 라벨
-            "임차인", "임차인명", "임차인성명", "성명", "스명", "전화", "전화번호", "전화번", "전호번", "전환번호", "번호",
+            "임차인", "임차인명", "임차인성명", "성명", "스명", "성영", "전화", "전화번호", "전화번", "전호번", "전환번호", "번호",
             "연락처", "핸드폰", "핸드폰번호", "관계", "관계인", "비고", "주소", "임차주소",
             // 다른 역할/설명 라벨이 임차인 이름 칸으로 새는 경우
             "소유자", "소유주", "소유자명", "소유주명", "채무자", "채무자명", "임대인", "세입자",
@@ -114,6 +117,17 @@ object TenantResultSanitizer {
         if (Regex("02-\\d{3,4}-\\d{4}").matches(value)) return true
         if (Regex("0(?:3[1-3]|4[1-4]|5[1-5]|6[1-4]|70)-\\d{3,4}-\\d{4}").matches(value)) return true
         return false
+    }
+
+    private fun addressTokens(vararg values: String): Set<String> = values
+        .asSequence()
+        .flatMap { Regex("[가-힣]{2,12}").findAll(it).map { match -> match.value } }
+        .toSet()
+
+    private fun isAdministrativeAddressLeak(value: String, tokens: Set<String>): Boolean {
+        val compact = normalizeTenantName(value)
+        if (compact.length < 3 || compact !in tokens) return false
+        return Regex("[가-힣]{2,}(?:특별자치도|특별자치시|광역시|특별시|도|시|군|구|읍|면|동|리)").matches(compact)
     }
 
     private fun normalizeTenantName(value: String): String = value

@@ -46,6 +46,10 @@ class AddressTypoRepairV355Test {
             "경기도 성남시 분당구 테스트동 테스트마을라이프아파트 105동 303호",
             AddressTypoRepairV355.normalize("123456 경기 성남 분당구 테스트동 테스트마을20 프아파트 105동 303호")
         )
+        assertEquals(
+            "경기도 성남시 분당구 테스트동 테스트마을라이프아파트 105동 303호",
+            AddressTypoRepairV355.normalize("123456 경기 성남 분당구 테스트동 테스트마을20 포아파트 105동 303호")
+        )
     }
 
     @Test
