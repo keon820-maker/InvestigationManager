@@ -18,6 +18,7 @@ object ContactRoleResolverV3517 {
         currentOwnerPhone: String,
         tenantsJson: String,
         debtorName: String,
+        ownerName: String = "",
         debtorRowPhones: List<String>,
         mobileCellPhones: List<String>,
         ownerCellPhones: List<String>,
@@ -35,19 +36,26 @@ object ContactRoleResolverV3517 {
         val curMobile = normalizePhone(currentMobile).takeIf { it !in excluded }.orEmpty()
         val curOwner = normalizePhone(currentOwnerPhone).takeIf { it !in excluded }.orEmpty()
 
-        // 대상자 행에서 휴대폰이 하나만 보이면 전화번호 칸이 아니라 휴대폰번호로 취급한다.
         val detectedMobile = mobileCell.firstOrNull()
             ?: row.filter { it.startsWith("01") }.distinct().singleOrNull()
             ?: curMobile.takeIf { it.startsWith("01") }.orEmpty()
 
-        // 종이 원본에서 전화번호 칸이 공란인데 같은 010이 전화번호로 잘못 매핑된 경우 제거한다.
+        // 전화번호와 휴대폰번호가 같은 문서도 있으나, 별도 전화 셀 근거가 없는 경우에는
+        // 과거 실기기 오배치 방지를 위해 중복 전화번호를 비운다.
         val detectedPhone = curPhone.takeUnless { it.isNotBlank() && it == detectedMobile }.orEmpty()
 
-        // 소유자 번호는 소유자 셀에서 읽힌 번호를 최우선한다. 대상자 번호와 같은 값은 교차누수로 본다.
-        val ownerFromCell = ownerCell.firstOrNull { it != detectedMobile && it != detectedPhone }
+        val debtor = bareName(debtorName)
+        val ownerPerson = bareName(ownerName)
+        val ownerSameAsDebtor = debtor.isNotBlank() && ownerPerson.isNotBlank() && debtor == ownerPerson
+
+        // 소유자와 채무자가 동일인이면 같은 번호가 소유자 연락처에 반복되는 것이 정상일 수 있다.
+        // 이 경우 소유자 셀에서 실제로 읽힌 번호는 채무자 번호와 같아도 보존한다.
+        val ownerFromCell = ownerCell.firstOrNull {
+            ownerSameAsDebtor || (it != detectedMobile && it != detectedPhone)
+        }
         val owner = when {
             ownerFromCell != null -> ownerFromCell
-            curOwner.isNotBlank() && curOwner != detectedMobile && curOwner != detectedPhone -> curOwner
+            curOwner.isNotBlank() && (ownerSameAsDebtor || (curOwner != detectedMobile && curOwner != detectedPhone)) -> curOwner
             else -> ""
         }
 
@@ -55,19 +63,19 @@ object ContactRoleResolverV3517 {
         val old = source.optJSONObject(0)
         val oldName = old?.optString("name").orEmpty().ifBlank { old?.optString("tenantName").orEmpty() }
         val oldPhone = normalizePhone(old?.optString("phone").orEmpty().ifBlank { old?.optString("mobile").orEmpty() })
-        val debtor = debtorName.substringBefore('(').replace(" ", "").trim()
 
-        var tName = oldName.takeIf(TenantResultSanitizer::validTenantName).orEmpty()
+        val tName = oldName.takeIf(TenantResultSanitizer::validTenantName).orEmpty()
             .ifBlank { tenant1Name.takeIf(TenantResultSanitizer::validTenantName).orEmpty() }
-        var tPhone = oldPhone.takeIf(TenantResultSanitizer::validTenantPhone).orEmpty()
-            .ifBlank { tenantPhones.firstOrNull().orEmpty() }
+        val tPhone = if (tName.isBlank()) {
+            ""
+        } else {
+            oldPhone.takeIf(TenantResultSanitizer::validTenantPhone).orEmpty()
+                .ifBlank { tenantPhones.firstOrNull().orEmpty() }
+        }
 
-        // 이 양식처럼 채무자와 임차인이 같은 사람인 경우 동일 번호 중복은 정상이다.
-        if (tPhone.isBlank() && detectedMobile.isNotBlank() && (tName == debtor || tName.isBlank())) tPhone = detectedMobile
-        if (tName.isBlank() && tPhone.isNotBlank() && tPhone == detectedMobile && TenantResultSanitizer.validTenantName(debtor)) tName = debtor
-
+        // v0.35.25: 임차인 셀에 실제 유효 이름이 없으면 채무자 이름/번호를 임차인으로 자동 생성하지 않는다.
         val out = JSONArray()
-        if (tName.isNotBlank() || tPhone.isNotBlank()) {
+        if (tName.isNotBlank()) {
             out.put(JSONObject().apply { put("name", tName); put("phone", tPhone) })
         }
         for (i in 1 until source.length().coerceAtMost(10)) source.optJSONObject(i)?.let(out::put)
@@ -86,6 +94,8 @@ object ContactRoleResolverV3517 {
             else -> ""
         }
     }
+
+    private fun bareName(value: String): String = value.substringBefore('(').replace(" ", "").trim()
 
     private val prefixes = setOf("031","032","033","041","042","043","044","051","052","053","054","055","061","062","063","064","070","080")
 }
