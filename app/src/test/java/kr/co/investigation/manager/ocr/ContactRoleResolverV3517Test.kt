@@ -7,11 +7,11 @@ import org.junit.Test
 
 class ContactRoleResolverV3517Test {
     @Test
-    fun `debtor mobile duplicated in tenant but never kept as owner`() {
+    fun `debtor mobile duplicated in tenant but distinct owner cell wins`() {
         val result = ContactRoleResolverV3517.resolve(
             currentPhone = "",
             currentMobile = "",
-            currentOwnerPhone = "010-7636-5823", // v0.35.16 실기기 오배치
+            currentOwnerPhone = "010-7636-5823",
             tenantsJson = "[]",
             debtorName = "민경기(970507-*)",
             debtorRowPhones = listOf("01076365823"),
@@ -33,24 +33,44 @@ class ContactRoleResolverV3517Test {
     }
 
     @Test
-    fun `tenant inherits debtor identity when same mobile is detected`() {
+    fun `debtor mobile alone never creates an empty-table tenant`() {
         val result = ContactRoleResolverV3517.resolve(
             currentPhone = "",
             currentMobile = "",
             currentOwnerPhone = "",
             tenantsJson = "[]",
-            debtorName = "민경기(970507-*)",
-            debtorRowPhones = listOf("010-7636-5823"),
+            debtorName = "홍길동(900101-*)",
+            debtorRowPhones = listOf("010-1111-2222"),
             mobileCellPhones = emptyList(),
-            ownerCellPhones = listOf("010-3542-6724"),
+            ownerCellPhones = emptyList(),
+            tenant1Name = "",
+            tenant1Phones = listOf("010-1111-2222"),
+            excluded = emptySet()
+        )
+
+        assertEquals("010-1111-2222", result.debtorMobile)
+        assertEquals(0, JSONArray(result.tenantsJson).length())
+    }
+
+    @Test
+    fun `same debtor and owner may legitimately share the same phone`() {
+        val result = ContactRoleResolverV3517.resolve(
+            currentPhone = "",
+            currentMobile = "010-1111-2222",
+            currentOwnerPhone = "",
+            tenantsJson = "[]",
+            debtorName = "홍길동(900101-*)",
+            ownerName = "홍길동",
+            debtorRowPhones = listOf("010-1111-2222"),
+            mobileCellPhones = listOf("010-1111-2222"),
+            ownerCellPhones = listOf("010-1111-2222"),
             tenant1Name = "",
             tenant1Phones = emptyList(),
             excluded = emptySet()
         )
 
-        assertEquals("010-7636-5823", result.debtorMobile)
-        val tenant = JSONArray(result.tenantsJson).getJSONObject(0)
-        assertEquals("민경기", tenant.getString("name"))
-        assertEquals("010-7636-5823", tenant.getString("phone"))
+        assertEquals("010-1111-2222", result.debtorMobile)
+        assertEquals("010-1111-2222", result.ownerPhone)
+        assertEquals(0, JSONArray(result.tenantsJson).length())
     }
 }

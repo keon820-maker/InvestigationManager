@@ -16,6 +16,7 @@ class TenantResultSanitizerTest {
             .put(JSONObject().put("name", "소유사").put("phone", ""))
             .put(JSONObject().put("name", "물건").put("phone", ""))
             .put(JSONObject().put("name", "수소").put("phone", ""))
+            .put(JSONObject().put("name", "경기도").put("phone", "010-1234-5678"))
 
         val repaired = TenantResultSanitizer.repair(resultWithTenants(input.toString()))
         val tenants = JSONArray(repaired.parsed.tenantsJson)
@@ -28,6 +29,7 @@ class TenantResultSanitizerTest {
         val input = JSONArray()
             .put(JSONObject().put("name", "지인성명").put("phone", "031-768-4432"))
             .put(JSONObject().put("name", "물건").put("phone", "010-1234-5678"))
+            .put(JSONObject().put("name", "경기도").put("phone", "010-5555-1111"))
 
         val repaired = TenantResultSanitizer.repair(resultWithTenants(input.toString()))
         val tenants = JSONArray(repaired.parsed.tenantsJson)
@@ -61,17 +63,16 @@ class TenantResultSanitizerTest {
     }
 
     @Test
-    fun rejectsRoleAndFieldLabelsButKeepsPlausibleRealNames() {
+    fun rejectsRoleFieldAndRegionLabelsButKeepsPlausibleRealNames() {
         val labels = listOf(
             "소유자", "소유주", "소유사", "채무자", "지인성명", "임대인", "세입자",
-            "전화번호", "성명", "본인거주", "물건", "물건소유자", "수소"
+            "전화번호", "성명", "본인거주", "물건", "물건소유자", "수소", "경기도"
         )
         labels.forEach { label ->
             assertTrue("label must be rejected: $label", !TenantResultSanitizer.validTenantName(label))
         }
 
         assertTrue(TenantResultSanitizer.validTenantName("김민수"))
-        // '소유사'만 제한적으로 차단하고, 실제 사람 이름이 될 수 있는 값까지 포괄 차단하지 않는다.
         assertTrue(TenantResultSanitizer.validTenantName("소유진"))
     }
 

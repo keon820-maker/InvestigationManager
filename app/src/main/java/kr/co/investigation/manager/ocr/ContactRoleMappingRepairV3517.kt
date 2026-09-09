@@ -11,7 +11,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /**
- * v0.35.17: OCR이 번호를 읽었지만 역할을 잘못 배치하는 실기기 사례를 마지막 단계에서 교정한다.
+ * v0.35.25: OCR이 번호를 읽었지만 역할을 잘못 배치하는 실기기 사례를 마지막 단계에서 교정한다.
  * 중앙표 정렬 이후 대상자 행/핸드폰 셀/소유자 셀/임차인1 셀을 서로 독립적으로 재OCR한다.
  */
 object ContactRoleMappingRepairV3517 {
@@ -19,7 +19,6 @@ object ContactRoleMappingRepairV3517 {
     private const val H = 3508f
     private data class Cell(val l: Int, val t: Int, val r: Int, val b: Int)
 
-    // 상단 대상자 행은 중앙표 기준 정렬 오차가 더 커질 수 있어 y/x 여유를 크게 둔다.
     private val debtorRowCells = listOf(
         Cell(900, 735, 2425, 980),
         Cell(760, 700, 2440, 1020)
@@ -44,7 +43,7 @@ object ContactRoleMappingRepairV3517 {
         return try {
             val c = base.parsed
             val excluded = setOf(
-                "010-5312-6436", // 고정 조사담당자
+                "010-5312-6436",
                 c.investigatorPhone,
                 c.investigatorFax,
                 c.branchPhone,
@@ -68,6 +67,7 @@ object ContactRoleMappingRepairV3517 {
                 currentOwnerPhone = c.ownerPhone,
                 tenantsJson = c.tenantsJson,
                 debtorName = c.debtorName,
+                ownerName = c.ownerName,
                 debtorRowPhones = debtorPhones,
                 mobileCellPhones = mobilePhones,
                 ownerCellPhones = ownerPhones,
@@ -85,7 +85,7 @@ object ContactRoleMappingRepairV3517 {
             if (fixed == c) base else base.copy(
                 parsed = fixed,
                 rawText = base.rawText + buildString {
-                    append("\n\n--- 연락처 역할 재매핑 v0.35.17 ---\n")
+                    append("\n\n--- 연락처 역할 재매핑 v0.35.25 ---\n")
                     append("대상자행 후보 : ").append(debtorPhones.joinToString()).append('\n')
                     append("핸드폰셀 후보 : ").append(mobilePhones.joinToString()).append('\n')
                     append("소유자셀 후보 : ").append(ownerPhones.joinToString()).append('\n')
@@ -93,7 +93,7 @@ object ContactRoleMappingRepairV3517 {
                     append("최종 전화/핸드폰 : ").append(fixed.phone).append(" / ").append(fixed.mobile).append('\n')
                     append("최종 소유자 연락처 : ").append(fixed.ownerPhone).append('\n')
                 },
-                preprocessMessage = base.preprocessMessage + " / 연락처 역할 재매핑 v0.35.17"
+                preprocessMessage = base.preprocessMessage + " / 연락처 역할 재매핑 v0.35.25"
             )
         } finally {
             client.close()
@@ -140,7 +140,6 @@ object ContactRoleMappingRepairV3517 {
             Regex("\\(?0\\d{1,3}\\)?[- .]?\\d{3,4}[- .]?\\d{4}")
         ).flatMap { r -> r.findAll(fixed).map { ContactRoleResolverV3517.normalizePhone(it.value) } }
 
-        // ML Kit가 010 / 7636 / 5823처럼 줄/토큰을 쪼개는 경우를 위해 숫자 토큰을 이어 본다.
         val tokens = Regex("\\d{2,4}").findAll(fixed).map { it.value }.toList()
         val rebuilt = sequence {
             for (i in tokens.indices) {

@@ -10,15 +10,15 @@ object NotesTypoRepairV29 {
         return base.copy(
             parsed = base.parsed.copy(requestNotes = after),
             rawText = base.rawText + buildString {
-                append("\n\n--- 기타요청사항 오기 보정 v0.35.12 ---\n")
+                append("\n\n--- 기타요청사항 오기 보정 v0.35.25 ---\n")
                 append("보정 전 : ").append(before.replace('\n', ' ')).append('\n')
                 append("보정 후 : ").append(after.replace('\n', ' ')).append('\n')
             },
-            preprocessMessage = base.preprocessMessage + " / 기타요청사항 최종 중복·오기 보정 v0.35.12"
+            preprocessMessage = base.preprocessMessage + " / 기타요청사항 중복·오기 보정 v0.35.25"
         )
     }
 
-    private fun clean(value: String): String {
+    internal fun clean(value: String): String {
         var s = value
 
         val replacements = listOf(
@@ -46,6 +46,7 @@ object NotesTypoRepairV29 {
 
         val sourceLines = s.lines()
             .map { it.replace(Regex("[ \\t]+"), " ").trim() }
+            .map { it.trimStart('|', '｜', '│') .trimStart() }
             .filter { it.isNotBlank() }
 
         val cleaned = mutableListOf<String>()
@@ -64,13 +65,17 @@ object NotesTypoRepairV29 {
                 continue
             }
 
+            // `3.7 E-요청항`처럼 표 제목이 심하게 깨져 다시 들어오면 그 이후는 두 번째 OCR 블록이다.
+            if (looksLikeRepeatedNotesMarker(line)) {
+                if (cleaned.isNotEmpty()) break
+                continue
+            }
+
             if (looksLikeNotesHeader(line)) {
                 if (cleaned.isNotEmpty()) break
                 continue
             }
 
-            // 하단 푸터/도장 OCR이 월임차료 뒤에 짧은 혼합문자 한 줄로 새는 경우를 제거한다.
-            // 예: `초인94리`. 일반적인 금액/기간/요청 문장은 건드리지 않는다.
             if (looksLikeTrailingFooterNoise(line, cleaned)) continue
 
             cleaned += line
@@ -82,13 +87,9 @@ object NotesTypoRepairV29 {
     }
 
     private fun canonicalLine(line: String): String = line
-        .replace(Regex("[\\s.,!?·ㆍ:：]+"), "")
+        .replace(Regex("[\\s.,!?·ㆍ:：|｜│]+"), "")
         .trim()
 
-    /**
-     * v0.35.12: `기타요청 시항`, `기타요천 시항`처럼 두 글자까지 흔들리는
-     * 재헤더가 정상 마지막 줄에 붙어도 그 위치부터 두 번째 OCR 블록으로 판단한다.
-     */
     private fun findInlineNotesHeaderStart(line: String): Int {
         val patterns = listOf(
             Regex("기\\s*타\\s*요\\s*[청천추침]\\s*[사시]\\s*항"),
@@ -96,6 +97,14 @@ object NotesTypoRepairV29 {
             Regex("기\\s*[eE]\\s*요\\s*최\\s*시\\s*환")
         )
         return patterns.mapNotNull { it.find(line)?.range?.first }.minOrNull() ?: -1
+    }
+
+    private fun looksLikeRepeatedNotesMarker(line: String): Boolean {
+        val compact = line.replace(Regex("\\s+"), "")
+        if (compact.length !in 4..18) return false
+        if (!compact.contains("요청") || !compact.endsWith("항")) return false
+        if (compact.contains("방문") || compact.contains("연락") || compact.contains("보증금")) return false
+        return Regex("^[0-9A-Za-z가-힣.()\\-]+$").matches(compact)
     }
 
     private fun looksLikeTrailingFooterNoise(line: String, cleaned: List<String>): Boolean {
@@ -120,12 +129,8 @@ object NotesTypoRepairV29 {
         val target = "기타요청사항"
 
         if (candidate == target) return true
-
-        // '다. 기타요추 사항'처럼 섹션 표식이 한글로 읽히거나 한두 글자가 흔들린 경우까지 처리한다.
-        // 짧은 독립 행에만 적용해 실제 메모 문장을 잘못 자르지 않는다.
         if (candidate.length in 4..8 && editDistance(candidate, target) <= 2) return true
 
-        // 기존 실기기에서 확인된 더 심한 깨짐도 계속 허용한다.
         return candidate.length in 4..12 && candidate.startsWith("기") &&
             (candidate.contains("요최시") || candidate.contains("요청사") ||
                 candidate.contains("요침사") || candidate.contains("요시환") ||
