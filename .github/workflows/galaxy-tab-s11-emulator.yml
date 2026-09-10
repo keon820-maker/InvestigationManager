@@ -68,8 +68,14 @@ jobs:
             set -eu
             mkdir -p tablet-test-artifacts
 
-            gradle -PincludeEmulatorAbi=true testDebugUnitTest connectedDebugAndroidTest assembleDebug
+            test_status=0
+            gradle -PincludeEmulatorAbi=true testDebugUnitTest connectedDebugAndroidTest assembleDebug || test_status=$?
             [ ! -d app/build/reports/androidTests/connected ] || cp -R app/build/reports/androidTests/connected tablet-test-artifacts/ocr-test-report
+            adb pull /sdcard/Android/data/kr.co.investigation.manager/files/ui-test-evidence tablet-test-artifacts/ui-test-evidence || true
+            if [ "$test_status" -ne 0 ]; then
+              adb logcat -d -t 2000 > tablet-test-artifacts/test-logcat.txt
+              exit "$test_status"
+            fi
             adb install -r app/build/outputs/apk/debug/app-debug.apk
 
             adb shell wm size 2560x1600

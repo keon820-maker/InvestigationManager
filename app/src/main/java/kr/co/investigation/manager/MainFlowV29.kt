@@ -305,7 +305,7 @@ private fun MainScreenV29(
                     TextButton(onClick = { vm.setYear(year - 1) }) { Text("‹") }
                     TextButton(onClick = { vm.setYear(year + 1) }) { Text("›") }
                     Box {
-                        TextButton(onClick = { moreMenu = true }) { Text("⋮", style = MaterialTheme.typography.titleLarge) }
+                        TextButton(onClick = { moreMenu = true },modifier = Modifier.testTag("main-menu")) { Text("⋮", style = MaterialTheme.typography.titleLarge) }
                         DropdownMenu(expanded = moreMenu, onDismissRequest = { moreMenu = false }) {
                             DropdownMenuItem(text = { Text("캘린더") }, onClick = { moreMenu = false; onCalendar() })
                             DropdownMenuItem(text = { Text("전체 데이터시트") }, onClick = { moreMenu = false; onDataSheet() })
@@ -342,7 +342,7 @@ private fun MainScreenV29(
             }
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(onClick = onNew, text = { Text("신규 등록") }, icon = { Text("＋") })
+            ExtendedFloatingActionButton(onClick = onNew, text = { Text("신규 등록") }, icon = { Text("＋") }, modifier = Modifier.testTag("new-registration"))
         }
     ) { pad ->
         BoxWithConstraints(Modifier.padding(pad).fillMaxSize()) {

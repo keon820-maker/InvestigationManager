@@ -30,20 +30,42 @@ import kr.co.investigation.manager.data.AppDb
 import kr.co.investigation.manager.data.Attachment
 import kr.co.investigation.manager.data.InvestigationCase
 import org.junit.Assert.*
-import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.ExternalResource
+import org.junit.rules.TestWatcher
+import org.junit.runner.Description
+import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.time.LocalDate
 
 /** Only synthetic app data is used. These tests never load user documents. */
 class IntakeAndRotationTest {
-    @get:Rule val ui = createAndroidComposeRule<MainActivity>()
+    @get:Rule(order = 0) val seed = object: ExternalResource() {
+        override fun before() { seedLocalUi() }
+    }
+    @get:Rule(order = 1) val ui = createAndroidComposeRule<MainActivity>()
+    @get:Rule(order = 2) val evidence = object: TestWatcher() {
+        override fun failed(error: Throwable, description: Description) {
+            val directory = File(context.getExternalFilesDir(null),"ui-test-evidence").apply { mkdirs() }
+            runCatching {
+                val roots = ui.onAllNodes(isRoot(), useUnmergedTree = true)
+                File(directory,"${description.methodName}.txt").writeText(
+                    roots.fetchSemanticsNodes().indices.joinToString("\n") { roots[it].printToString() })
+            }
+            runCatching {
+                InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()?.let { bitmap ->
+                    File(directory,"${description.methodName}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG,100,it) }
+                    bitmap.recycle()
+                }
+            }
+        }
+    }
     private val context: Context get() = ApplicationProvider.getApplicationContext()
     private var smallId = 0L
     private var largeId = 0L
 
-    @Before fun seedLocalUi() = runBlocking {
+    private fun seedLocalUi() = runBlocking {
         context.getSharedPreferences("investigation_ui", Context.MODE_PRIVATE).edit()
             .putBoolean("v029_guide_seen", true).commit()
         InvestigatorProfileStore.save(context, InvestigatorProfile("검증담당", "01000000000"))
@@ -59,12 +81,10 @@ class IntakeAndRotationTest {
         db.attachments().insert(Attachment(caseId = largeId, type = "CONFIRMATION", originalName = image.name,
             localPath = image.absolutePath, mimeType = "image/jpeg", byteSize = image.length(),
             width = 32, height = 32, capturedAt = null, sha256 = "synthetic-ui-fixture"))
-        ui.activityRule.scenario.recreate()
-        ui.waitForIdle()
     }
 
     private fun openMenu(label: String) {
-        ui.onNodeWithText("⋮").performClick()
+        ui.onNodeWithTag("main-menu").performClick()
         ui.onAllNodesWithText(label).onLast().performClick()
         ui.waitForIdle()
     }
@@ -125,7 +145,7 @@ class IntakeAndRotationTest {
     }
 
     @Test fun cameraCancellationAndLocalPickerKeepRegistrationOpen() {
-        ui.onNodeWithText("신규 등록").performClick()
+        ui.onNodeWithTag("new-registration").performClick()
         ui.onNode(hasSetTextAction() and hasText("관리번호")).performScrollTo().performTextInput("회전검증")
         closeSoftKeyboard()
         rotate("ocr")
