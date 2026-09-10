@@ -45,7 +45,10 @@ internal object GridFormOcr {
                 put("requestNotes", layout.notes)
             }
             val emptyTenants = valueCells.filter { (key, cell) -> key.startsWith("tenant") && !CellImageProcessing.hasInk(bitmap, cell) }.keys
-            val inputs = valueCells.filterKeys { it !in emptyTenants }.map { CellBatchReader.Input(it.key, it.value) }
+            // Korean identities lose recognition context in a mixed panel on some photos.
+            // Keep their original isolated reads; never trade identity accuracy for batching.
+            val isolatedKeys = valueCells.keys.filter { it == "debtorName" || it == "ownerIdentity" || it.endsWith(".name") }.toSet()
+            val inputs = valueCells.filterKeys { it !in emptyTenants && it !in isolatedKeys }.map { CellBatchReader.Input(it.key, it.value) }
             val originals = if (batchCells) CellBatchReader.read(client, bitmap, inputs) else emptyMap()
             val contrasts = if (batchCells) CellBatchReader.read(client, bitmap, inputs, enhanced = true) else emptyMap()
             suspend fun value(key: String, cell: GridFormLayout.Cell, normalize: (String) -> String): String {
@@ -53,10 +56,11 @@ internal object GridFormOcr {
                     raw[key] = ""
                     return ""
                 }
-                var first = if (batchCells) originals[key].orEmpty() else read(client, bitmap, cell)
-                var second = if (batchCells) contrasts[key].orEmpty() else read(client, bitmap, cell, enhanced = true)
+                val batched = batchCells && key !in isolatedKeys
+                var first = if (batched) originals[key].orEmpty() else read(client, bitmap, cell)
+                var second = if (batched) contrasts[key].orEmpty() else read(client, bitmap, cell, enhanced = true)
                 // A rejected/missing batch line can only be retried in its own source cell.
-                if (batchCells && first.isBlank() && second.isBlank() && CellImageProcessing.hasInk(bitmap, cell)) {
+                if (batched && first.isBlank() && second.isBlank() && CellImageProcessing.hasInk(bitmap, cell)) {
                     first = read(client, bitmap, cell)
                     second = read(client, bitmap, cell, enhanced = true)
                     if (first.isBlank() && second.isBlank()) review += key

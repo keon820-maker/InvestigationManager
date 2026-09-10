@@ -23,6 +23,8 @@ The grid route now:
 6. Uses the bundled Korean ML Kit recognizer. The primary route does not send images to
    a cloud OCR provider. It omits the fixed investigator row from the header crop.
 7. Batches isolated crops into panels grouped by width, without rescaling the crops.
+   Identities and tenant names retain individual reads after a photo regression exposed
+   recognition differences for short Korean names in mixed panels.
    Whitespace separates cells; a recognized line must fit one cell to be assigned.
    Missing reads with visible ink are retried only in that same source cell. A device
    regression test verifies distinct contacts after batch reordering and wrapped lines.
