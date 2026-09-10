@@ -24,6 +24,9 @@ object OcrService {
     }
 
     private suspend fun recognizeCase(normalizedDocument: DocumentNormalizer.Result): OcrResult {
+        // A complete verified grid needs no second warp/Hough pass. This also avoids
+        // resampling legible text after the central table has already been aligned.
+        GridFormOcr.recognize(normalizedDocument)?.let { return it }
         val alignedDocument = TemplateAnchorNormalizer.realign(normalizedDocument)
         return try {
             // Once cell ownership is verified, no later regex/anchor repair may replace its blanks.
