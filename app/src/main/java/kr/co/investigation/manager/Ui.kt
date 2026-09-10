@@ -18,6 +18,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
 import kr.co.investigation.manager.archive.ArchiveService
 import kr.co.investigation.manager.data.*
@@ -250,7 +251,7 @@ import java.util.Locale
     f("조사구분",c.investigationType){c.copy(investigationType=it)}
     f("대출종류",c.loanType){c.copy(loanType=it)}
     f("물건종류",c.propertyType){c.copy(propertyType=it)}
-    f("임차인 주소(물건 소재지)",c.propertyAddress){c.copy(propertyAddress=it)}
+    f("물건소재지",c.propertyAddress){c.copy(propertyAddress=it)}
     TenantEditorV3513(c.tenantsJson){on(c.copy(tenantsJson=it))}
     f("물건소유자",c.ownerName){c.copy(ownerName=it)}
     f("주민번호",c.ownerResidentNo){c.copy(ownerResidentNo=it)}
@@ -290,60 +291,39 @@ import java.util.Locale
 @Composable fun DefaultAddressChoiceDialog(
     value:InvestigationCase,
     onDismiss:()->Unit,
-    onSelect:(String)->Unit
+    onSelect:(InvestigationCase)->Unit
 ){
+    var choice by androidx.compose.runtime.saveable.rememberSaveable(value.id) { mutableStateOf(value.normalizedDefaultAddressType()) }
+    var directAddress by androidx.compose.runtime.saveable.rememberSaveable(value.id) { mutableStateOf(value.customMapAddress) }
+    val selected = value.copy(defaultAddressType = choice, customMapAddress = directAddress.trim())
     AlertDialog(
         onDismissRequest=onDismiss,
-        title={Text("기본 주소지 선택")},
+        title={Text("지도 표시 위치")},
         text={
-            Column(verticalArrangement=Arrangement.spacedBy(9.dp)){
-                Text("지도와 길안내에서 기본으로 사용할 주소를 선택하세요.",style=MaterialTheme.typography.bodySmall)
-                val tenantSelected=value.normalizedDefaultAddressType()==DEFAULT_ADDRESS_TENANT
-                val ownerSelected=value.normalizedDefaultAddressType()==DEFAULT_ADDRESS_OWNER
-                if(tenantSelected) Button(
-                    enabled=value.propertyAddress.isNotBlank(),
-                    onClick={onSelect(DEFAULT_ADDRESS_TENANT)},
-                    modifier=Modifier.fillMaxWidth()
-                ){
-                    Column(Modifier.fillMaxWidth()){
-                        Text("✓ 임차인 주소(물건 소재지)")
-                        Text(value.propertyAddress.ifBlank{"주소 없음"},style=MaterialTheme.typography.labelSmall,maxLines=2)
-                    }
-                } else OutlinedButton(
-                    enabled=value.propertyAddress.isNotBlank(),
-                    onClick={onSelect(DEFAULT_ADDRESS_TENANT)},
-                    modifier=Modifier.fillMaxWidth()
-                ){
-                    Column(Modifier.fillMaxWidth()){
-                        Text("임차인 주소(물건 소재지)")
-                        Text(value.propertyAddress.ifBlank{"주소 없음"},style=MaterialTheme.typography.labelSmall,maxLines=2)
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement=Arrangement.spacedBy(9.dp)){
+                Text("지도와 길안내에서 사용할 주소를 선택하세요.",style=MaterialTheme.typography.bodySmall)
+                listOf(DEFAULT_ADDRESS_TENANT to "물건소재지", DEFAULT_ADDRESS_OWNER to "소유자 주소", DEFAULT_ADDRESS_CUSTOM to "직접입력").forEach { (type, label) ->
+                    OutlinedButton(onClick={choice=type},modifier=Modifier.fillMaxWidth()) {
+                        Column(Modifier.fillMaxWidth()) {
+                            Text((if(choice==type) "✓ " else "") + label)
+                            val address = when(type) {
+                                DEFAULT_ADDRESS_TENANT -> value.propertyAddress
+                                DEFAULT_ADDRESS_OWNER -> value.ownerAddress
+                                else -> ""
+                            }
+                            if(type != DEFAULT_ADDRESS_CUSTOM) Text(address.ifBlank{"주소 없음"},style=MaterialTheme.typography.labelSmall,maxLines=2)
+                        }
                     }
                 }
-                if(ownerSelected) Button(
-                    enabled=value.ownerAddress.isNotBlank(),
-                    onClick={onSelect(DEFAULT_ADDRESS_OWNER)},
-                    modifier=Modifier.fillMaxWidth()
-                ){
-                    Column(Modifier.fillMaxWidth()){
-                        Text("✓ 소유자 주소")
-                        Text(value.ownerAddress.ifBlank{"주소 없음"},style=MaterialTheme.typography.labelSmall,maxLines=2)
-                    }
-                } else OutlinedButton(
-                    enabled=value.ownerAddress.isNotBlank(),
-                    onClick={onSelect(DEFAULT_ADDRESS_OWNER)},
-                    modifier=Modifier.fillMaxWidth()
-                ){
-                    Column(Modifier.fillMaxWidth()){
-                        Text("소유자 주소")
-                        Text(value.ownerAddress.ifBlank{"주소 없음"},style=MaterialTheme.typography.labelSmall,maxLines=2)
-                    }
+                if(choice==DEFAULT_ADDRESS_CUSTOM) {
+                    OutlinedTextField(directAddress,{directAddress=it},label={Text("직접입력 주소")},
+                        placeholder={Text("도로명·지번 주소와 상세주소")},minLines=2,modifier=Modifier.fillMaxWidth())
+                    Text("입력한 주소는 조사의뢰서와 PDF에도 표시됩니다.",style=MaterialTheme.typography.bodySmall)
                 }
-                if(value.propertyAddress.isBlank() && value.ownerAddress.isBlank()){
-                    Text("주소를 먼저 입력해야 저장할 수 있습니다.",color=MaterialTheme.colorScheme.error)
-                }
+                if(selected.defaultAddress().isBlank()) Text("선택한 위치의 주소를 입력해주세요.",color=MaterialTheme.colorScheme.error)
             }
         },
-        confirmButton={},
+        confirmButton={Button(enabled=selected.defaultAddress().isNotBlank(),onClick={onSelect(selected)}){Text("이 위치로 저장")}},
         dismissButton={TextButton(onClick=onDismiss){Text("취소")}}
     )
 }
@@ -358,17 +338,30 @@ import java.util.Locale
     val ctx=LocalContext.current
     val scope=rememberCoroutineScope()
     var profile by remember(ctx){mutableStateOf(InvestigatorProfileStore.load(ctx))}
-    var c by remember(c0,profile){mutableStateOf(profile.applyTo(c0))}
+    var c by vm.detailDraft
+    LaunchedEffect(c0.id, profile) { c = profile.applyTo(c) }
     val atts by vm.db.attachments().observe(c.id).collectAsStateWithLifecycle(emptyList())
-    var pending by remember{mutableStateOf<File?>(null)}
+    var photoError by remember{mutableStateOf("")}
     var confirmDelete by remember{mutableStateOf(false)}
     var chooseDefaultAddress by remember{mutableStateOf(false)}
     var showInvestigatorProfile by remember{mutableStateOf(!profile.isConfigured)}
-    val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()){u->if(u!=null)scope.launch{vm.addAttachment(OriginalFileStore.copyOriginal(ctx,u,c.id,c.year,"CONFIRMATION").attachment)}}
-    val camera=rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()){ok->
-        val f=pending
-        if(ok&&f!=null) scope.launch{vm.addAttachment(OriginalFileStore.finalizeCamera(f,c.id,"CONFIRMATION").attachment)}
-    }
+    val photos = rememberDocumentPhotoActions(c.year,
+        onPhoto = { uri, file ->
+            val caseId = c.id
+            val caseYear = c.year
+            val appContext = ctx.applicationContext
+            vm.viewModelScope.launch {
+                try {
+                    val saved = if (file != null) OriginalFileStore.finalizeCamera(file, caseId, "CONFIRMATION")
+                    else OriginalFileStore.copyOriginal(appContext, uri, caseId, caseYear, "CONFIRMATION")
+                    vm.addAttachment(saved.attachment)
+                    photoError = ""
+                } catch (error: Exception) {
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    photoError = "사진을 저장하지 못했습니다. 다시 선택해주세요."
+                }
+            }
+        }, onError = { photoError = it })
     if(showInvestigatorProfile) InvestigatorProfileDialog(
         initial=profile,
         onDismiss={showInvestigatorProfile=false},
@@ -390,9 +383,9 @@ import java.util.Locale
     if(chooseDefaultAddress) DefaultAddressChoiceDialog(
         value=c,
         onDismiss={chooseDefaultAddress=false},
-        onSelect={kind->
+        onSelect={selection->
             chooseDefaultAddress=false
-            val updated=profile.applyTo(c.copy(defaultAddressType=kind))
+            val updated=profile.applyTo(selection)
             c=updated
             vm.update(updated)
         }
@@ -404,14 +397,11 @@ import java.util.Locale
             Row(Modifier.padding(vertical=10.dp)){
                 Button(onClick={chooseDefaultAddress=true}){Text("변경 저장")}
                 Spacer(Modifier.width(8.dp))
-                Button(onClick={picker.launch("image/*")}){Text("조사확인서 첨부")}
+                Button(onClick=photos.choosePhoto){Text("조사확인서 첨부")}
                 Spacer(Modifier.width(8.dp))
-                OutlinedButton(onClick={
-                    val f=OriginalFileStore.createCameraTarget(ctx,c.year,c.id.toString())
-                    pending=f
-                    camera.launch(FileProvider.getUriForFile(ctx,"${ctx.packageName}.files",f))
-                }){Text("카메라 촬영")}
+                OutlinedButton(onClick=photos.takePhoto){Text("카메라 촬영")}
             }
+            if(photoError.isNotBlank()) Text(photoError,color=MaterialTheme.colorScheme.error)
             Text("첨부 원본 ${atts.size}개",style=MaterialTheme.typography.titleMedium)
             Text("항목을 누르면 저장된 원본을 확대해서 확인할 수 있습니다.",style=MaterialTheme.typography.bodySmall)
             atts.forEach{att->

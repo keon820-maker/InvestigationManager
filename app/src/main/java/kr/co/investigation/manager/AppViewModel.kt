@@ -21,6 +21,8 @@ import java.util.UUID
 
 class AppViewModel(app:Application):AndroidViewModel(app){
     val db=AppDb.get(app)
+    val ocrDraft = OcrRegistrationDraft()
+    val detailDraft = androidx.compose.runtime.mutableStateOf(InvestigationCase(year = LocalDate.now().year))
     private val _year=MutableStateFlow(LocalDate.now().year); val year=_year.asStateFlow()
     val cases=_year.flatMapLatest{db.cases().observeYear(it)}.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val allCases=db.cases().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -73,7 +75,7 @@ class AppViewModel(app:Application):AndroidViewModel(app){
     }
 
     fun setYear(y:Int){_year.value=y;_selected.value=null}
-    fun select(c:InvestigationCase?){_selected.value=c}
+    fun select(c:InvestigationCase?){_selected.value=c; if(c != null) detailDraft.value=c}
 
     suspend fun create(c:InvestigationCase):Long {
         val xy=c.defaultAddress().takeIf { it.isNotBlank() }

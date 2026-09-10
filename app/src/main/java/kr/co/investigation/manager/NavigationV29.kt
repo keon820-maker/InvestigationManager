@@ -22,12 +22,13 @@ data class PhoneTargetV29(
 suspend fun resolveNavigationTargetV29(
     context: Context,
     c: InvestigationCase,
-    ownerAddress: Boolean
+    addressType: String
 ): NavigationTargetV29? {
-    val address = if (ownerAddress) c.ownerAddress.trim() else c.propertyAddress.trim()
+    val destination = c.copy(defaultAddressType = addressType)
+    val address = destination.defaultAddress()
     if (address.isBlank()) return null
 
-    val isDefaultAddress = ownerAddress == (c.normalizedDefaultAddressType() == DEFAULT_ADDRESS_OWNER)
+    val isDefaultAddress = destination.normalizedDefaultAddressType() == c.normalizedDefaultAddressType()
     val xy = if (isDefaultAddress && c.propertyLatitude != null && c.propertyLongitude != null) {
         c.propertyLatitude to c.propertyLongitude
     } else {
@@ -35,7 +36,7 @@ suspend fun resolveNavigationTargetV29(
     } ?: return null
 
     return NavigationTargetV29(
-        label = if (ownerAddress) "소유자 주소" else "임차인 주소(물건 소재지)",
+        label = destination.defaultAddressLabel(),
         address = address,
         latitude = xy.first,
         longitude = xy.second

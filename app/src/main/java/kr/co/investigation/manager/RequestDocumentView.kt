@@ -125,6 +125,13 @@ fun RequestDocumentView(c: InvestigationCase, modifier: Modifier = Modifier) {
             }
         }
 
+        if (c.documentMapAddress().isNotBlank()) {
+            SectionTitle("지도 표시 주소(직접입력)")
+            Box(Modifier.fillMaxWidth().border(1.dp, Color.Black).padding(12.dp)) {
+                Text(c.documentMapAddress(), color = Color.Black, fontSize = 11.sp, lineHeight = 17.sp)
+            }
+        }
+
         SectionTitle("3. 기타요청사항")
         Box(
             Modifier

@@ -24,11 +24,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.content.FileProvider
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable as rememberUiState
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kr.co.investigation.manager.data.Attachment
 import kr.co.investigation.manager.data.InvestigationCase
@@ -51,10 +57,22 @@ import kotlin.math.*
 fun InvestigationAppV29(vm: AppViewModel) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("investigation_ui", Context.MODE_PRIVATE) }
-    var screen by remember { mutableStateOf("main") }
-    var formReturn by remember { mutableStateOf("main") }
-    var detailReturn by remember { mutableStateOf("main") }
-    var viewingAttachment by remember { mutableStateOf<Attachment?>(null) }
+    var screen by rememberUiState { mutableStateOf("main") }
+    var formReturn by rememberUiState { mutableStateOf("main") }
+    var detailReturn by rememberUiState { mutableStateOf("main") }
+    var selectedCaseId by rememberUiState { mutableStateOf<Long?>(null) }
+    var viewingAttachmentId by rememberUiState { mutableStateOf<Long?>(null) }
+    val screenStates = rememberSaveableStateHolder()
+    val selected by vm.selected.collectAsStateWithLifecycle()
+    val attachments by remember(selected?.id) {
+        selected?.let { vm.db.attachments().observe(it.id) } ?: flowOf(emptyList<Attachment>())
+    }.collectAsStateWithLifecycle(emptyList())
+    LaunchedEffect(selectedCaseId) {
+        selectedCaseId?.let { id ->
+            if (vm.selected.value?.id != id) vm.db.cases().get(id)?.let(vm::select)
+        }
+    }
+    fun selectCase(value: InvestigationCase) { selectedCaseId = value.id; vm.select(value) }
     var confirmExit by remember { mutableStateOf(false) }
     var showGuide by remember { mutableStateOf(!prefs.getBoolean("v029_guide_seen", false)) }
 
@@ -64,6 +82,7 @@ fun InvestigationAppV29(vm: AppViewModel) {
     }
 
     fun goBack() {
+        if (screen == "ocr") vm.ocrDraft.reset()
         screen = when (screen) {
             "attachment" -> "detail"
             "form" -> formReturn
@@ -101,12 +120,14 @@ fun InvestigationAppV29(vm: AppViewModel) {
         )
     }
 
+    screenStates.SaveableStateProvider(screen) {
+    Box(Modifier.fillMaxSize().testTag("screen-$screen")) {
     when (screen) {
         "main" -> MainScreenV29(
             vm = vm,
-            onNew = { screen = "ocr" },
-            onEdit = { vm.select(it); detailReturn = "main"; screen = "detail" },
-            onForm = { vm.select(it); formReturn = "main"; screen = "form" },
+            onNew = { vm.ocrDraft.reset(); screenStates.removeState("ocr"); screen = "ocr" },
+            onEdit = { selectCase(it); detailReturn = "main"; screen = "detail" },
+            onForm = { selectCase(it); formReturn = "main"; screen = "form" },
             onSettings = { screen = "settings" },
             onPatchHistory = { screen = "patches" },
             onCalendar = { screen = "calendar" },
@@ -116,31 +137,35 @@ fun InvestigationAppV29(vm: AppViewModel) {
         "calendar" -> CalendarScreenV29(
             vm = vm,
             onBack = { screen = "main" },
-            onOpen = { vm.select(it); detailReturn = "calendar"; screen = "detail" }
+            onOpen = { selectCase(it); detailReturn = "calendar"; screen = "detail" }
         )
         "datasheet" -> DataSheetScreenV31(
             vm = vm,
             onBack = { screen = "main" },
-            onOpen = { vm.select(it); detailReturn = "datasheet"; screen = "detail" }
+            onOpen = { selectCase(it); detailReturn = "datasheet"; screen = "detail" }
         )
-        "ocr" -> OcrRegisterScreenV29(vm, onDone = { screen = "main" }, onCancel = { screen = "main" })
+        "ocr" -> OcrRegisterScreenV29(vm,
+            onDone = { vm.ocrDraft.reset(); screen = "main" },
+            onCancel = { vm.ocrDraft.reset(); screen = "main" })
         "detail" -> vm.selected.collectAsStateWithLifecycle().value?.let {
             DetailScreen(
                 vm = vm,
                 c0 = it,
                 onBack = { screen = detailReturn },
                 onForm = { formReturn = "detail"; screen = "form" },
-                onAttachment = { att -> viewingAttachment = att; screen = "attachment" }
+                onAttachment = { att -> viewingAttachmentId = att.id; screen = "attachment" }
             )
         }
         "form" -> vm.selected.collectAsStateWithLifecycle().value?.let {
             RequestFormScreen(it, onBack = { screen = formReturn })
         }
-        "attachment" -> viewingAttachment?.let {
+        "attachment" -> attachments.firstOrNull { it.id == viewingAttachmentId }?.let {
             AttachmentViewerScreen(it, onBack = { screen = "detail" })
         }
         "settings" -> SettingsScreen(vm, onBack = { screen = "main" })
         "patches" -> PatchHistoryScreen(onBack = { screen = "main" })
+    }
+    }
     }
 }
 
@@ -160,7 +185,7 @@ private fun UsageGuideDialogV29(onClose: () -> Unit) {
                 Text("3. 일정 화면의 오늘/내일/이번주 필터로 방문할 건을 확인합니다.")
                 Text("4. 같은 날짜의 ‘동선’ 버튼에서 방문순서를 정하거나 거리순 자동정렬합니다.")
                 Text("5. 진행중 건은 카카오맵에 표시되며 마커의 간단정보로 대상을 구분할 수 있습니다.")
-                Text("6. 신규·편집 저장 때 임차인 주소(물건 소재지) 또는 소유자 주소 중 기본 주소를 지정합니다.")
+                Text("6. 신규·편집 저장 때 물건소재지·소유자 주소·직접입력 중 지도 표시 위치를 지정합니다.")
                 Text("7. 전화는 임차인·물건 소유자·채무자 중 저장된 번호를 선택합니다.")
                 Text("8. 캘린더에서는 월 전체 조사 일정을 한눈에 확인합니다.")
                 Text("9. 전체 데이터시트에서는 모든 연도의 저장 건을 필터링하고 화면 크기를 조절해 확인합니다.")
@@ -650,11 +675,11 @@ private fun NavigationFlowDialogV29(c: InvestigationCase, onDismiss: () -> Unit)
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
 
-    fun resolve(owner: Boolean) {
+    fun resolve(addressType: String) {
         busy = true
         error = ""
         scope.launch {
-            target = resolveNavigationTargetV29(context, c, owner)
+            target = resolveNavigationTargetV29(context, c, addressType)
             if (target == null) error = "주소를 지도 좌표로 변환하지 못했습니다. 주소를 확인하세요."
             busy = false
         }
@@ -670,16 +695,16 @@ private fun NavigationFlowDialogV29(c: InvestigationCase, onDismiss: () -> Unit)
                     Text("어느 주소로 이동할지 선택하세요.", style = MaterialTheme.typography.bodySmall)
                     if (c.propertyAddress.isNotBlank()) {
                         if (c.normalizedDefaultAddressType() == DEFAULT_ADDRESS_TENANT) {
-                            FilledTonalButton(onClick = { resolve(false) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                            FilledTonalButton(onClick = { resolve(DEFAULT_ADDRESS_TENANT) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.fillMaxWidth()) {
-                                    Text("✓ 기본 · 임차인 주소(물건 소재지)", fontWeight = FontWeight.SemiBold)
+                                    Text("✓ 기본 · 물건소재지", fontWeight = FontWeight.SemiBold)
                                     Text(c.propertyAddress, style = MaterialTheme.typography.labelSmall)
                                 }
                             }
                         } else {
-                            OutlinedButton(onClick = { resolve(false) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(onClick = { resolve(DEFAULT_ADDRESS_TENANT) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.fillMaxWidth()) {
-                                    Text("임차인 주소(물건 소재지)", fontWeight = FontWeight.SemiBold)
+                                    Text("물건소재지", fontWeight = FontWeight.SemiBold)
                                     Text(c.propertyAddress, style = MaterialTheme.typography.labelSmall)
                                 }
                             }
@@ -687,18 +712,26 @@ private fun NavigationFlowDialogV29(c: InvestigationCase, onDismiss: () -> Unit)
                     }
                     if (c.ownerAddress.isNotBlank()) {
                         if (c.normalizedDefaultAddressType() == DEFAULT_ADDRESS_OWNER) {
-                            FilledTonalButton(onClick = { resolve(true) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                            FilledTonalButton(onClick = { resolve(DEFAULT_ADDRESS_OWNER) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.fillMaxWidth()) {
                                     Text("✓ 기본 · 소유자 주소", fontWeight = FontWeight.SemiBold)
                                     Text(c.ownerAddress, style = MaterialTheme.typography.labelSmall)
                                 }
                             }
                         } else {
-                            OutlinedButton(onClick = { resolve(true) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(onClick = { resolve(DEFAULT_ADDRESS_OWNER) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.fillMaxWidth()) {
                                     Text("소유자 주소", fontWeight = FontWeight.SemiBold)
                                     Text(c.ownerAddress, style = MaterialTheme.typography.labelSmall)
                                 }
+                            }
+                        }
+                    }
+                    if (c.customMapAddress.isNotBlank()) {
+                        OutlinedButton(onClick = { resolve(DEFAULT_ADDRESS_CUSTOM) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.fillMaxWidth()) {
+                                Text((if(c.normalizedDefaultAddressType()==DEFAULT_ADDRESS_CUSTOM) "✓ 기본 · " else "") + "직접입력 주소")
+                                Text(c.customMapAddress, style = MaterialTheme.typography.labelSmall)
                             }
                         }
                     }
@@ -815,8 +848,8 @@ private fun RoutePlannerDialogV29(
 @Composable
 private fun CalendarScreenV29(vm: AppViewModel, onBack: () -> Unit, onOpen: (InvestigationCase) -> Unit) {
     val cases by vm.cases.collectAsStateWithLifecycle()
-    var month by remember { mutableStateOf(YearMonth.now()) }
-    var selectedDate by remember { mutableStateOf(LocalDate.now()) }
+    var month by rememberUiState(stateSaver = Saver<YearMonth, String>(save = { it.toString() }, restore = { YearMonth.parse(it) })) { mutableStateOf(YearMonth.now()) }
+    var selectedDate by rememberUiState(stateSaver = Saver<LocalDate, String>(save = { it.toString() }, restore = { LocalDate.parse(it) })) { mutableStateOf(LocalDate.now()) }
     val byDate = remember(cases) { cases.filter { it.plannedDate.isNotBlank() }.groupBy { it.plannedDate } }
     val today = LocalDate.now()
 
@@ -925,19 +958,20 @@ private fun CalendarGridV29(
 
 @Composable
 private fun OcrRegisterScreenV29(vm: AppViewModel, onDone: () -> Unit, onCancel: () -> Unit) {
-    val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val ctx = LocalContext.current.applicationContext
+    val scope = vm.viewModelScope
+    val draft = vm.ocrDraft
     var profile by remember(ctx) { mutableStateOf(InvestigatorProfileStore.load(ctx)) }
     var showProfileDialog by remember { mutableStateOf(!profile.isConfigured) }
-    var raw by remember { mutableStateOf("") }
+    var raw by draft.raw
     var showRaw by remember { mutableStateOf(false) }
-    var parsed by remember { mutableStateOf(InvestigationCase(year = LocalDate.now().year)) }
-    var busy by remember { mutableStateOf(false) }
-    var saving by remember { mutableStateOf(false) }
-    var source by remember { mutableStateOf<Uri?>(null) }
-    var cameraFile by remember { mutableStateOf<File?>(null) }
-    var cameraSource by remember { mutableStateOf(false) }
-    var preprocess by remember { mutableStateOf("") }
+    var parsed by draft.parsed
+    var busy by draft.busy
+    var saving by draft.saving
+    var source by draft.source
+    var cameraFile by draft.cameraFile
+    var cameraSource by draft.cameraSource
+    var preprocess by draft.preprocess
     var duplicates by remember { mutableStateOf<List<InvestigationCase>?>(null) }
     var chooseDefaultAddress by remember { mutableStateOf(false) }
 
@@ -972,7 +1006,9 @@ private fun OcrRegisterScreenV29(vm: AppViewModel, onDone: () -> Unit, onCancel:
     }
 
     fun acceptOcr(uri: Uri, fromCamera: Boolean, file: File? = null) {
-        if (!fromCamera) cameraFile?.delete()
+        draft.job?.cancel()
+        val generation = ++draft.generation
+        if (cameraFile != file) cameraFile?.delete()
         source = uri
         cameraSource = fromCamera
         cameraFile = file
@@ -980,15 +1016,20 @@ private fun OcrRegisterScreenV29(vm: AppViewModel, onDone: () -> Unit, onCancel:
         raw = ""
         showRaw = false
         preprocess = "문서 분석 중..."
-        scope.launch {
+        draft.job = scope.launch {
             runCatching { OcrService.recognizeCase(ctx, uri) }
                 .onSuccess { result ->
-                    raw = result.rawText
-                    parsed = profile.applyTo(result.parsed).copy(status = result.parsed.status.normalizedStatusV29())
-                    preprocess = result.preprocessMessage
+                    if (generation == draft.generation) {
+                        raw = result.rawText
+                        parsed = profile.applyTo(result.parsed).copy(status = result.parsed.status.normalizedStatusV29())
+                        preprocess = result.preprocessMessage
+                    }
                 }
-                .onFailure { preprocess = "OCR 실패: ${it.message.orEmpty()}" }
-            busy = false
+                .onFailure {
+                    if (it is CancellationException) throw it
+                    if (generation == draft.generation) preprocess = "OCR 실패: ${it.message.orEmpty()}"
+                }
+            if (generation == draft.generation) busy = false
         }
     }
 
@@ -1007,8 +1048,8 @@ private fun OcrRegisterScreenV29(vm: AppViewModel, onDone: () -> Unit, onCancel:
     if (chooseDefaultAddress) DefaultAddressChoiceDialog(
         value = parsed,
         onDismiss = { chooseDefaultAddress = false },
-        onSelect = { type ->
-            parsed = parsed.copy(defaultAddressType = type)
+        onSelect = { selection ->
+            parsed = selection
             chooseDefaultAddress = false
             checkDuplicatesAndPersist()
         }
@@ -1031,19 +1072,9 @@ private fun OcrRegisterScreenV29(vm: AppViewModel, onDone: () -> Unit, onCancel:
         )
     }
 
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) acceptOcr(uri, fromCamera = false)
-    }
-    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
-        val file = cameraFile
-        val uri = file?.let { FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", it) }
-        if (ok && file != null && uri != null) acceptOcr(uri, fromCamera = true, file = file)
-        else {
-            file?.delete()
-            cameraFile = null
-            cameraSource = false
-        }
-    }
+    val photos = rememberDocumentPhotoActions(LocalDate.now().year,
+        onPhoto = { uri, file -> acceptOcr(uri, fromCamera = file != null, file = file) },
+        onError = { preprocess = it })
     val warnings = remember(parsed) { ocrWarningsV29(parsed) }
 
     Scaffold(topBar = { TopAppBar(title = { Text("조사의뢰서 등록") }, navigationIcon = { TextButton(onClick = { cameraFile?.delete(); onCancel() }) { Text("뒤로") } }) }) { pad ->
@@ -1054,17 +1085,12 @@ private fun OcrRegisterScreenV29(vm: AppViewModel, onDone: () -> Unit, onCancel:
                     Spacer(Modifier.height(8.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
-                            onClick = { picker.launch("image/*") },
+                            onClick = photos.choosePhoto,
                             enabled = !busy && !saving,
                             modifier = Modifier.weight(1f)
-                        ) { Text("사진 선택") }
+                        ) { Text("갤러리에서 선택") }
                         OutlinedButton(
-                            onClick = {
-                                val file = OriginalFileStore.createCameraTarget(ctx, LocalDate.now().year, "request")
-                                cameraFile = file
-                                val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", file)
-                                camera.launch(uri)
-                            },
+                            onClick = photos.takePhoto,
                             enabled = !busy && !saving,
                             modifier = Modifier.weight(1f)
                         ) { Text("카메라 촬영") }
