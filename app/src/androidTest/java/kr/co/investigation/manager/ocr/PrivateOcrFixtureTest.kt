@@ -25,7 +25,16 @@ class PrivateOcrFixtureTest {
         require(files.isNotEmpty()) { "No local fixtures supplied" }
         for ((index, file) in files.withIndex()) {
             val start = System.currentTimeMillis()
-            val result = OcrService.recognizeCase(context, Uri.fromFile(file))
+            File(output, "progress.txt").writeText("$index/${files.size}; normalizing sample ${index + 1}")
+            val gridOnly = InstrumentationRegistry.getArguments().getString("gridOnly") == "true"
+            val result = if (gridOnly) {
+                val normalized = DocumentNormalizer.normalize(context, Uri.fromFile(file))
+                try {
+                    File(output, "progress.txt").writeText("$index/${files.size}; reading cells in sample ${index + 1}")
+                    GridFormOcr.recognize(normalized) ?: OcrService.OcrResult("",
+                        kr.co.investigation.manager.data.InvestigationCase(year = 2026), false, "Grid not verified")
+                } finally { normalized.bitmap.recycle() }
+            } else OcrService.recognizeCase(context, Uri.fromFile(file))
             // App-private output only. Never put raw values in assertions, logcat or CI reports.
             File(output, "sample-${index + 1}.json").writeText(Gson().toJson(result))
             File(output, "progress.txt").writeText("${index + 1}/${files.size}; ${System.currentTimeMillis() - start}ms")
