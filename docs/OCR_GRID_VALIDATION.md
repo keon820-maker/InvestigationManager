@@ -13,8 +13,11 @@ The grid route now:
    labels before assigning any field. Unsupported layouts retain the legacy route.
 3. Reads only each value cell, including all ten tenant name/phone pairs. A blank cell
    remains blank. Shared phone numbers remain valid when printed in multiple roles.
-4. Compares original and enhanced reads within that same cell. Conflicting values are
-   left empty and listed for review. Whitespace-only differences are equivalent.
+4. Compares original and gentle contrast reads within that same cell. Cell enhancement
+   does not erase character strokes. Conflicting identities/numbers are left empty;
+   free-text candidates remain visible with a review warning. Whitespace-only differences
+   and spaces within birth-date digits are normalized. Empty tenant cells with no
+   character-sized ink skip OCR.
 5. Returns the verified grid result directly; subsequent legacy repairs cannot replace
    its values, invent a tenant from a debtor phone, or substitute a guessed building name.
 6. Uses the bundled Korean ML Kit recognizer. The primary route does not send images to
