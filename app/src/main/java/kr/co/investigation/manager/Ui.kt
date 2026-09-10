@@ -345,6 +345,9 @@ import java.util.Locale
     val scope=rememberCoroutineScope()
     var profile by remember(ctx){mutableStateOf(InvestigatorProfileStore.load(ctx))}
     var c by vm.detailDraft
+    val saveStatus by vm.detailSaveStatus
+    val saving=saveStatus.caseId==c.id&&saveStatus.busy
+    val saveMessage=if(saveStatus.caseId==c.id) saveStatus.message else ""
     LaunchedEffect(c0.id, profile) { c = profile.applyTo(c) }
     val atts by vm.db.attachments().observe(c.id).collectAsStateWithLifecycle(emptyList())
     var photoError by remember{mutableStateOf("")}
@@ -375,6 +378,7 @@ import java.util.Locale
             InvestigatorProfileStore.save(ctx,value)
             profile=InvestigatorProfileStore.load(ctx)
             c=profile.applyTo(c)
+            vm.clearDetailSaveFeedback(c.id)
             vm.applyInvestigatorProfile(profile)
             showInvestigatorProfile=false
         }
@@ -393,10 +397,33 @@ import java.util.Locale
         onSelect={selection->
             chooseDefaultAddress=false
             c=profile.applyTo(selection)
+            vm.clearDetailSaveFeedback(c.id)
         }
     )
-    Scaffold(topBar={TopAppBar(title={Text(c.managementNo.ifBlank{"상세정보"})},navigationIcon={TextButton(onClick=onBack){Text("뒤로")}},actions={TextButton(onClick=onForm){Text("조사의뢰서")}})}){pad->
-        Column(Modifier.padding(pad).verticalScroll(rememberScrollState()).padding(16.dp)){
+    Scaffold(
+        topBar={TopAppBar(title={Text(c.managementNo.ifBlank{"상세정보"})},navigationIcon={TextButton(onClick=onBack){Text("뒤로")}},actions={TextButton(onClick=onForm){Text("조사의뢰서")}})},
+        bottomBar={
+            Surface(tonalElevation=3.dp){
+                Column(
+                    Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal=16.dp,vertical=8.dp),
+                    verticalArrangement=Arrangement.spacedBy(8.dp)
+                ){
+                    if(saving||saveMessage.isNotBlank()) Text(
+                        text=saveMessage.ifBlank{"변경사항을 저장하고 있습니다."},
+                        color=if(saveStatus.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        style=MaterialTheme.typography.bodySmall,
+                        modifier=Modifier.testTag("detail-save-status")
+                    )
+                    Button(
+                        enabled=!saving,
+                        onClick={c=profile.applyTo(c);vm.saveDetail(c)},
+                        modifier=Modifier.fillMaxWidth().testTag("detail-save")
+                    ){Text(if(saving) "저장 중…" else "변경 저장")}
+                }
+            }
+        }
+    ){pad->
+        Column(Modifier.padding(pad).consumeWindowInsets(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)){
             OutlinedCard(Modifier.fillMaxWidth().padding(bottom=12.dp)) {
                 Column(Modifier.padding(12.dp)) {
                     Row(verticalAlignment=Alignment.CenterVertically) {
@@ -407,14 +434,11 @@ import java.util.Locale
                     Text("변경 저장을 누르면 주소 변경도 함께 저장됩니다.",style=MaterialTheme.typography.labelSmall)
                 }
             }
-            EditFields(c,fixedInvestigator=true){c=profile.applyTo(it)}
-            OutlinedTextField(c.investigationMemo,{c=c.copy(investigationMemo=it)},label={Text("조사 비고")},minLines=4,modifier=Modifier.fillMaxWidth())
-            Row(Modifier.padding(vertical=10.dp)){
-                Button(onClick={c=profile.applyTo(c);vm.update(c)}){Text("변경 저장")}
-                Spacer(Modifier.width(8.dp))
-                Button(onClick=photos.choosePhoto){Text("조사확인서 첨부")}
-                Spacer(Modifier.width(8.dp))
-                OutlinedButton(onClick=photos.takePhoto){Text("카메라 촬영")}
+            EditFields(c,fixedInvestigator=true){c=profile.applyTo(it);vm.clearDetailSaveFeedback(c.id)}
+            OutlinedTextField(c.investigationMemo,{c=c.copy(investigationMemo=it);vm.clearDetailSaveFeedback(c.id)},label={Text("조사 비고")},minLines=4,modifier=Modifier.fillMaxWidth())
+            Column(Modifier.fillMaxWidth().padding(vertical=10.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
+                Button(onClick=photos.choosePhoto,modifier=Modifier.fillMaxWidth()){Text("조사확인서 첨부")}
+                OutlinedButton(onClick=photos.takePhoto,modifier=Modifier.fillMaxWidth()){Text("카메라 촬영")}
             }
             if(photoError.isNotBlank()) Text(photoError,color=MaterialTheme.colorScheme.error)
             Text("첨부 원본 ${atts.size}개",style=MaterialTheme.typography.titleMedium)

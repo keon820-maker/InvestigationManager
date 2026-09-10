@@ -27,8 +27,8 @@ android {
         applicationId = "kr.co.investigation.manager"
         minSdk = 28
         targetSdk = 35
-        versionCode = 63
-        versionName = "0.35.28"
+        versionCode = 64
+        versionName = "0.35.29"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
