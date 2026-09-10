@@ -117,9 +117,15 @@ class AppViewModel(app:Application):AndroidViewModel(app){
                 modifiedByDevice = syncIdentity.deviceId,
                 lastSyncedAt = null
             )
-            db.cases().update(updated)
-            _selected.value=updated
-            scheduleSync()
+            val saved = db.withTransaction {
+                val current = db.cases().get(c.id)
+                if(current == null || current.deletedAt != null) false
+                else { db.cases().update(updated); true }
+            }
+            if(saved) {
+                if(_selected.value?.id == c.id) _selected.value=updated
+                scheduleSync()
+            }
         }
     }
 

@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.graphics.pdf.PdfDocument
 import android.os.Bundle
 import android.os.CancellationSignal
 import android.os.ParcelFileDescriptor
@@ -131,6 +132,13 @@ internal fun printDataSheet(context: Context, snapshot: SheetPrintSnapshot) {
     } catch (_: Exception) { Toast.makeText(context,"인쇄 화면을 열 수 없습니다. 인쇄 서비스를 확인해주세요.",Toast.LENGTH_LONG).show() }
 }
 
+internal fun startSheetPrintPage(document: PrintedPdfDocument, pageNumber: Int): PdfDocument.Page {
+    // Use a full-page canvas and apply the printer margins exactly once ourselves.
+    val page = document.startPage(PdfDocument.PageInfo.Builder(document.pageWidth, document.pageHeight, pageNumber).create())
+    page.canvas.translate(document.pageContentRect.left.toFloat(), document.pageContentRect.top.toFloat())
+    return page
+}
+
 private class DataSheetPrintAdapter(private val context: Context, private val snapshot: SheetPrintSnapshot): PrintDocumentAdapter() {
     private var attributes: PrintAttributes? = null
     private var pages = emptyList<SheetPrintPage>()
@@ -162,8 +170,7 @@ private class DataSheetPrintAdapter(private val context: Context, private val sn
                     ensureActive()
                     if(cancellation.isCanceled) throw CancellationException()
                     if(ranges.any { index in it.start..it.end }) {
-                        val page = document.startPage(index + 1)
-                        page.canvas.translate(document.pageContentRect.left.toFloat(), document.pageContentRect.top.toFloat())
+                        val page = startSheetPrintPage(document, index + 1)
                         drawSheetPrintPage(page.canvas,snapshot,content,index+1)
                         document.finishPage(page)
                         written += PageRange(index,index)
