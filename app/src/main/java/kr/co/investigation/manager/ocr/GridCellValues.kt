@@ -22,6 +22,12 @@ internal object GridCellValues {
     fun name(value: String): String = singleLine(value).replace(" ", "")
         .takeIf { Regex("[가-힣]{2,6}").matches(it) && TenantResultSanitizer.validTenantName(it) }.orEmpty()
 
+    fun identity(value: String): String {
+        val joined = value.replace(Regex("(?<=[가-힣])\\s+(?=[가-힣])"), "")
+            .replace(Regex("[（(]([^）)]+)[）)]")) { "(" + it.groupValues[1].replace(Regex("\\s+"), "") + ")" }
+        return OcrFieldNormalizer.debtorIdentity(joined)
+    }
+
     fun date(value: String): String {
         val clean = value.uppercase().replace('O', '0').replace('I', '1')
         val match = Regex("(20\\d{2})\\s*[-./년]?\\s*(\\d{1,2})\\s*[-./월]?\\s*(\\d{1,2})").find(clean) ?: return ""

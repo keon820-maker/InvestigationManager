@@ -32,17 +32,27 @@ internal object GridFormOcr {
             val review = linkedSetOf<String>()
             val raw = linkedMapOf<String, String>()
             suspend fun value(key: String, cell: GridFormLayout.Cell, normalize: (String) -> String): String {
+                if (key.startsWith("tenant") && !CellImageProcessing.hasInk(bitmap, cell)) {
+                    raw[key] = ""
+                    return ""
+                }
                 val first = read(client, bitmap, cell)
                 val second = read(client, bitmap, cell, enhanced = true)
                 raw[key] = first
                 val choice = GridCellValues.choose(first, second, normalize)
-                if (choice.review || (first.isNotBlank() && choice.value.isBlank())) review += key
-                return choice.value
+                if (choice.review || (first.isNotBlank() && choice.value.isBlank())) {
+                    review += key
+                    raw["$key.retry"] = second
+                }
+                // For free text retain the original cell as a reviewable candidate; do not
+                // discard an entire address or note because one enhancement changes a glyph.
+                val freeText = key in setOf("investigationType", "propertyType", "propertyAddress", "ownerAddress", "requestNotes")
+                return if (freeText && choice.value.isBlank()) normalize(first) else choice.value
             }
             suspend fun field(key: String, normalize: (String) -> String = GridCellValues::singleLine): String =
                 value(key, layout.fields.getValue(key), normalize)
 
-            val debtor = field("debtorName", OcrFieldNormalizer::debtorIdentity)
+            val debtor = field("debtorName", GridCellValues::identity)
             if (debtor.isNotBlank() && !Regex("\\(\\d{6}").containsMatchIn(debtor)) review += "debtorName"
             val phone = field("phone", GridCellValues::phone)
             val mobile = field("mobile", GridCellValues::phone)
@@ -51,7 +61,7 @@ internal object GridFormOcr {
             val loan = field("loanType", OcrFieldNormalizer::loanType)
             val propertyType = field("propertyType")
             val propertyAddress = field("propertyAddress", GridCellValues::address)
-            val ownerIdentity = field("ownerIdentity", OcrFieldNormalizer::debtorIdentity)
+            val ownerIdentity = field("ownerIdentity", GridCellValues::identity)
             // The model has one owner contact field; retain the first printed number, flag multiple.
             val ownerPhone = field("ownerPhone") { GridCellValues.phones(it).joinToString(" / ") }
             if (ownerPhone.contains(" / ")) review += "ownerPhone"
@@ -129,7 +139,7 @@ internal object GridFormOcr {
         var prepared: Bitmap? = null
         var bordered: Bitmap? = null
         try {
-            prepared = if (enhanced) OcrImageEnhancer.enhance(crop) else crop
+            prepared = if (enhanced) CellImageProcessing.contrast(crop) else crop
             // Border helps ML Kit read characters at the edge without widening into another cell.
             bordered = Bitmap.createBitmap(prepared.width + 32, prepared.height + 32, Bitmap.Config.ARGB_8888)
             Canvas(bordered).apply { drawColor(Color.WHITE); drawBitmap(prepared, 16f, 16f, null) }

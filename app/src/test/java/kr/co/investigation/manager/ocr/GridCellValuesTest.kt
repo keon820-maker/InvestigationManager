@@ -31,6 +31,7 @@ class GridCellValuesTest {
         assertEquals("테스트시 20 프아파트", GridCellValues.address("12345 테스트시 20 프아파트"))
     }
     @Test fun birthAndFullLoanLabelArePreserved() {
+        assertEquals("가나다(900101-*)", GridCellValues.identity("가 나 다 (9001 01-*)"))
         assertEquals("가나다(900101-*)", OcrFieldNormalizer.debtorIdentity("가나다 (900101-*)"))
         assertEquals("부동산 담보대출", OcrFieldNormalizer.loanType("부동산담보대출"))
     }
