@@ -24,7 +24,7 @@ internal object GridCellValues {
 
     fun date(value: String): String {
         val clean = value.uppercase().replace('O', '0').replace('I', '1')
-        val match = Regex("(20\\d{2})\\s*[-./년]?\\s*(\\d{2})\\s*[-./월]?\\s*(\\d{2})").find(clean) ?: return ""
+        val match = Regex("(20\\d{2})\\s*[-./년]?\\s*(\\d{1,2})\\s*[-./월]?\\s*(\\d{1,2})").find(clean) ?: return ""
         return runCatching { LocalDate.of(match.groupValues[1].toInt(), match.groupValues[2].toInt(), match.groupValues[3].toInt()).toString() }.getOrDefault("")
     }
 
@@ -36,8 +36,8 @@ internal object GridCellValues {
     fun phones(value: String): List<String> {
         val fixed = value.uppercase().replace('O', '0').replace('I', '1').replace('L', '1')
         // Whitespace can wrap a number inside this cell. Brackets and adjacent numbers are boundaries.
-        return Regex("(?<!\\d)0\\d{1,2}[\\s.\\-)]*\\d{3,4}[\\s.\\-]*\\d{4}(?!\\d)")
-            .findAll(fixed).map { ContactRoleResolverV3517.normalizePhone(it.value) }
+        return Regex("(?<!\\d)0\\d{1,3}[\\s.\\-)]*\\d{3,4}[\\s.\\-]*\\d{4}(?!\\d)")
+            .findAll(fixed).map { OcrPhoneNormalizer.normalize(it.value) }
             .filter(String::isNotBlank).distinct().toList()
     }
 

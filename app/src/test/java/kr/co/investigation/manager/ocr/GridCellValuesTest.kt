@@ -19,10 +19,12 @@ class GridCellValuesTest {
         assertEquals("010-0000-0000", GridCellValues.phone("010-0000-\n0000[010-0000-0000]"))
         assertEquals("", GridCellValues.phone("010-0000-0000 010-0000-0001"))
         assertEquals("", GridCellValues.phone("010-0000 [0000]"))
+        assertEquals("0503-0000-0000", GridCellValues.phone("(0503-0000-0000)"))
     }
     @Test fun impossibleDateAndLabelAreRejected() {
         assertEquals("", GridCellValues.date("2026-02-31"))
         assertEquals("2026-03-09", GridCellValues.date("2026년 03월 09일"))
+        assertEquals("2026-03-09", GridCellValues.date("2026년 3월 9일"))
         assertEquals("", GridCellValues.name("임차인1(성명)"))
     }
     @Test fun addressIsNotChangedToAnUnobservedBuilding() {

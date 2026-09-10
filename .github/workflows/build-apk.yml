@@ -125,6 +125,28 @@ jobs:
           : "${KAKAO_NATIVE_APP_KEY:?Missing KAKAO_NATIVE_APP_KEY repository secret}"
           gradle testDebugUnitTest assembleDebug
 
+      - name: Build offline OCR validation APKs
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle -PincludeEmulatorAbi=true -PprivateOcrValidation=true assemblePrivateValidation assemblePrivateValidationAndroidTest
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)
+          if "$AAPT" dump permissions app/build/outputs/apk/privateValidation/app-privateValidation.apk | grep -q 'android.permission.INTERNET'; then
+            echo "Offline OCR validation APK must not have INTERNET permission."
+            exit 1
+          fi
+
+      - name: Upload offline OCR validation APKs
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-ocr-validation-apks
+          path: |
+            app/build/outputs/apk/privateValidation/*.apk
+            app/build/outputs/apk/androidTest/privateValidation/*.apk
+          retention-days: 7
+
       - name: Verify APK signing certificate
         shell: bash
         run: |
