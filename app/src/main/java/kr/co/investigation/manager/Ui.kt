@@ -291,9 +291,13 @@ import java.util.Locale
 @Composable fun DefaultAddressChoiceDialog(
     value:InvestigationCase,
     onDismiss:()->Unit,
-    onSelect:(InvestigationCase)->Unit
+    onSelect:(InvestigationCase)->Unit,
+    allowCustom:Boolean = true,
+    confirmLabel:String = "이 위치로 저장"
 ){
-    var choice by androidx.compose.runtime.saveable.rememberSaveable(value.id) { mutableStateOf(value.normalizedDefaultAddressType()) }
+    var choice by androidx.compose.runtime.saveable.rememberSaveable(value.id) {
+        mutableStateOf(value.normalizedDefaultAddressType().takeIf { allowCustom || it != DEFAULT_ADDRESS_CUSTOM } ?: DEFAULT_ADDRESS_TENANT)
+    }
     var directAddress by androidx.compose.runtime.saveable.rememberSaveable(value.id) { mutableStateOf(value.customMapAddress) }
     val selected = value.copy(defaultAddressType = choice, customMapAddress = directAddress.trim())
     AlertDialog(
@@ -302,7 +306,8 @@ import java.util.Locale
         text={
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement=Arrangement.spacedBy(9.dp)){
                 Text("지도와 길안내에서 사용할 주소를 선택하세요.",style=MaterialTheme.typography.bodySmall)
-                listOf(DEFAULT_ADDRESS_TENANT to "물건소재지", DEFAULT_ADDRESS_OWNER to "소유자 주소", DEFAULT_ADDRESS_CUSTOM to "직접입력").forEach { (type, label) ->
+                (listOf(DEFAULT_ADDRESS_TENANT to "물건소재지", DEFAULT_ADDRESS_OWNER to "소유자 주소") +
+                    if(allowCustom) listOf(DEFAULT_ADDRESS_CUSTOM to "직접입력") else emptyList()).forEach { (type, label) ->
                     OutlinedButton(onClick={choice=type},modifier=Modifier.fillMaxWidth()) {
                         Column(Modifier.fillMaxWidth()) {
                             Text((if(choice==type) "✓ " else "") + label)
@@ -315,6 +320,7 @@ import java.util.Locale
                         }
                     }
                 }
+                if(!allowCustom) Text("직접입력 주소는 등록 후 편집 화면의 ‘주소지 변경’에서 지정할 수 있습니다.",style=MaterialTheme.typography.bodySmall)
                 if(choice==DEFAULT_ADDRESS_CUSTOM) {
                     OutlinedTextField(directAddress,{directAddress=it},label={Text("직접입력 주소")},
                         placeholder={Text("도로명·지번 주소와 상세주소")},minLines=2,modifier=Modifier.fillMaxWidth())
@@ -323,7 +329,7 @@ import java.util.Locale
                 if(selected.defaultAddress().isBlank()) Text("선택한 위치의 주소를 입력해주세요.",color=MaterialTheme.colorScheme.error)
             }
         },
-        confirmButton={Button(enabled=selected.defaultAddress().isNotBlank(),onClick={onSelect(selected)}){Text("이 위치로 저장")}},
+        confirmButton={Button(enabled=selected.defaultAddress().isNotBlank(),onClick={onSelect(selected)}){Text(confirmLabel)}},
         dismissButton={TextButton(onClick=onDismiss){Text("취소")}}
     )
 }
@@ -343,7 +349,7 @@ import java.util.Locale
     val atts by vm.db.attachments().observe(c.id).collectAsStateWithLifecycle(emptyList())
     var photoError by remember{mutableStateOf("")}
     var confirmDelete by remember{mutableStateOf(false)}
-    var chooseDefaultAddress by remember{mutableStateOf(false)}
+    var chooseDefaultAddress by androidx.compose.runtime.saveable.rememberSaveable{mutableStateOf(false)}
     var showInvestigatorProfile by remember{mutableStateOf(!profile.isConfigured)}
     val photos = rememberDocumentPhotoActions(c.year,
         onPhoto = { uri, file ->
@@ -382,20 +388,29 @@ import java.util.Locale
     )
     if(chooseDefaultAddress) DefaultAddressChoiceDialog(
         value=c,
+        confirmLabel="적용",
         onDismiss={chooseDefaultAddress=false},
         onSelect={selection->
             chooseDefaultAddress=false
-            val updated=profile.applyTo(selection)
-            c=updated
-            vm.update(updated)
+            c=profile.applyTo(selection)
         }
     )
     Scaffold(topBar={TopAppBar(title={Text(c.managementNo.ifBlank{"상세정보"})},navigationIcon={TextButton(onClick=onBack){Text("뒤로")}},actions={TextButton(onClick=onForm){Text("조사의뢰서")}})}){pad->
         Column(Modifier.padding(pad).verticalScroll(rememberScrollState()).padding(16.dp)){
+            OutlinedCard(Modifier.fillMaxWidth().padding(bottom=12.dp)) {
+                Column(Modifier.padding(12.dp)) {
+                    Row(verticalAlignment=Alignment.CenterVertically) {
+                        Text("지도 표시 위치 · ${c.defaultAddressLabel()}",modifier=Modifier.weight(1f))
+                        OutlinedButton(onClick={chooseDefaultAddress=true}){Text("주소지 변경")}
+                    }
+                    Text(c.defaultAddress().ifBlank{"주소지 변경에서 지도에 표시할 주소를 지정하세요."},style=MaterialTheme.typography.bodySmall)
+                    Text("변경 저장을 누르면 주소 변경도 함께 저장됩니다.",style=MaterialTheme.typography.labelSmall)
+                }
+            }
             EditFields(c,fixedInvestigator=true){c=profile.applyTo(it)}
             OutlinedTextField(c.investigationMemo,{c=c.copy(investigationMemo=it)},label={Text("조사 비고")},minLines=4,modifier=Modifier.fillMaxWidth())
             Row(Modifier.padding(vertical=10.dp)){
-                Button(onClick={chooseDefaultAddress=true}){Text("변경 저장")}
+                Button(onClick={c=profile.applyTo(c);vm.update(c)}){Text("변경 저장")}
                 Spacer(Modifier.width(8.dp))
                 Button(onClick=photos.choosePhoto){Text("조사확인서 첨부")}
                 Spacer(Modifier.width(8.dp))

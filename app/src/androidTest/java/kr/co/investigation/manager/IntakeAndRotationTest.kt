@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.core.app.ApplicationProvider
+import androidx.lifecycle.ViewModelProvider
 import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.espresso.intent.Intents
 import androidx.test.espresso.intent.Intents.intended
@@ -182,5 +183,87 @@ class IntakeAndRotationTest {
         assertEquals("검증시 직접입력로 123", saved!!.defaultAddress())
         ui.onNodeWithText("지도 표시 주소(직접입력)").assertExists()
         ui.onNodeWithText("검증시 직접입력로 123").assertExists()
+    }
+
+    @Test fun columnFiltersAndSearchPrintOnlyTheirIntersectionInTheCurrentOrder() {
+        var printed: SheetPrintSnapshot? = null
+        ui.runOnUiThread {
+            val vm = ViewModelProvider(ui.activity)[AppViewModel::class.java]
+            ui.activity.setContent { InvestigationTheme {
+                DataSheetScreenV31(vm, onBack = {}, onOpen = {}, onPrint = { printed = it })
+            } }
+        }
+        ui.waitUntil(10_000) { ui.onAllNodesWithTag("sheet-header-관리번호").fetchSemanticsNodes().isNotEmpty() }
+        ui.onNodeWithTag("sheet-header-관리번호").performClick().performClick()
+        ui.onNodeWithTag("sheet-filter-관리번호").performClick()
+        ui.onNodeWithText("전체 해제").performClick()
+        ui.onNodeWithTag("sheet-filter-value-검사-2").performClick()
+        ui.onNodeWithTag("sheet-filter-value-검사-10").performClick()
+        ui.onNodeWithText("적용").performClick()
+        ui.onNodeWithTag("sheet-print").performClick()
+        val management = printed!!.columns.indexOfFirst { it.title == "관리번호" }
+        assertEquals(listOf("검사-10", "검사-2"), printed!!.rows.map { it[management] })
+        assertFalse(printed!!.columns.any { it.title in setOf("연도", "방문순서") })
+        ui.onNodeWithTag("sheet-search").performTextInput("검사-10")
+        closeSoftKeyboard()
+        ui.onNodeWithTag("sheet-print").performClick()
+        assertEquals(listOf("검사-10"), printed!!.rows.map { it[management] })
+        ui.onNodeWithTag("sheet-search").performTextReplacement("가상다")
+        closeSoftKeyboard()
+        ui.onNodeWithTag("sheet-print").assertIsNotEnabled()
+        ui.onNodeWithTag("sheet-filter-관리번호").assertExists()
+        ui.onNodeWithTag("sheet-search").performTextClearance()
+        closeSoftKeyboard()
+        ui.onNodeWithTag("sheet-print").performClick()
+        assertEquals(2, printed!!.rows.size)
+    }
+
+    @Test fun sheetDeletionRequiresSelectionKeepsItOnRotationAndRetainsOriginals() {
+        openMenu("전체 데이터시트")
+        ui.onNodeWithText("삭제").performClick()
+        ui.onNodeWithTag("sheet-delete-selected").assertIsNotEnabled()
+        ui.onNodeWithTag("sheet-select-$largeId").performClick()
+        rotate("datasheet")
+        ui.onNodeWithTag("sheet-select-$largeId").assertIsOn()
+        ui.onNodeWithTag("sheet-search").performTextInput("검사-2")
+        closeSoftKeyboard()
+        ui.onNodeWithTag("sheet-delete-selected").assertIsNotEnabled()
+        ui.onNodeWithTag("sheet-search").performTextClearance()
+        closeSoftKeyboard()
+        ui.onNodeWithTag("sheet-select-$largeId").performClick()
+        ui.onNodeWithTag("sheet-delete-selected").performClick()
+        ui.onAllNodesWithText("취소").onLast().performClick()
+        assertNull(runBlocking { AppDb.get(context).cases().get(largeId)!!.deletedAt })
+        ui.onNodeWithTag("sheet-delete-selected").performClick()
+        ui.onNodeWithTag("sheet-confirm-delete").performClick()
+        ui.waitUntil(10_000) { runBlocking { AppDb.get(context).cases().get(largeId)!!.deletedAt != null } }
+        assertNull(runBlocking { AppDb.get(context).cases().get(smallId)!!.deletedAt })
+        val attachments = runBlocking { AppDb.get(context).attachments().getForCase(largeId) }
+        assertEquals(1, attachments.size)
+        assertTrue(File(attachments.single().localPath).isFile)
+        ui.waitUntil(10_000) { ui.onAllNodesWithTag("sheet-row-$largeId").fetchSemanticsNodes().isEmpty() }
+    }
+
+    @Test fun ordinarySaveDoesNotAskForLocationAndAddressChangesUseTheirOwnButton() {
+        openMenu("전체 데이터시트")
+        ui.onNodeWithTag("sheet-row-$smallId").performClick()
+        ui.onNode(hasSetTextAction() and hasText("관리번호")).performTextReplacement("검사-저장")
+        closeSoftKeyboard()
+        ui.onNodeWithText("변경 저장").performScrollTo().performClick()
+        ui.onNodeWithText("이 위치로 저장").assertDoesNotExist()
+        ui.waitUntil(10_000) { runBlocking { AppDb.get(context).cases().get(smallId)!!.managementNo == "검사-저장" } }
+        ui.onNodeWithText("주소지 변경").performScrollTo().performClick()
+        ui.onNodeWithText("직접입력").performClick()
+        ui.onNode(hasSetTextAction() and hasText("직접입력 주소")).performTextInput("검증시 변경주소 456")
+        closeSoftKeyboard()
+        ui.onNodeWithText("적용").performClick()
+        rotate("detail")
+        ui.runOnUiThread {
+            val draft = ViewModelProvider(ui.activity)[AppViewModel::class.java].detailDraft.value
+            assertEquals(DEFAULT_ADDRESS_CUSTOM, draft.defaultAddressType)
+            assertEquals("검증시 변경주소 456", draft.customMapAddress)
+        }
+        // Until ordinary Save, the persistent record keeps the old address.
+        assertEquals("", runBlocking { AppDb.get(context).cases().get(smallId)!!.customMapAddress })
     }
 }

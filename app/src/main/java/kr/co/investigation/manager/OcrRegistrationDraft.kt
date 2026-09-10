@@ -13,6 +13,7 @@ class OcrRegistrationDraft {
     val parsed = mutableStateOf(InvestigationCase(year = LocalDate.now().year))
     val busy = mutableStateOf(false)
     val saving = mutableStateOf(false)
+    val saved = mutableStateOf(false)
     val source = mutableStateOf<Uri?>(null)
     val cameraFile = mutableStateOf<File?>(null)
     val cameraSource = mutableStateOf(false)
@@ -29,6 +30,7 @@ class OcrRegistrationDraft {
         parsed.value = InvestigationCase(year = LocalDate.now().year)
         busy.value = false
         saving.value = false
+        saved.value = false
         source.value = null
         cameraFile.value = null
         cameraSource.value = false

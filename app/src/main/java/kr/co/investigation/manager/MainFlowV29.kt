@@ -82,6 +82,7 @@ fun InvestigationAppV29(vm: AppViewModel) {
     }
 
     fun goBack() {
+        if (screen == "ocr" && vm.ocrDraft.saving.value) return
         if (screen == "ocr") vm.ocrDraft.reset()
         screen = when (screen) {
             "attachment" -> "detail"
@@ -185,7 +186,7 @@ private fun UsageGuideDialogV29(onClose: () -> Unit) {
                 Text("3. 일정 화면의 오늘/내일/이번주 필터로 방문할 건을 확인합니다.")
                 Text("4. 같은 날짜의 ‘동선’ 버튼에서 방문순서를 정하거나 거리순 자동정렬합니다.")
                 Text("5. 진행중 건은 카카오맵에 표시되며 마커의 간단정보로 대상을 구분할 수 있습니다.")
-                Text("6. 신규·편집 저장 때 물건소재지·소유자 주소·직접입력 중 지도 표시 위치를 지정합니다.")
+                Text("6. 편집 화면의 주소지 변경에서 지도 표시 위치를 지정합니다. 직접입력 주소는 조사의뢰서에도 표시됩니다.")
                 Text("7. 전화는 임차인·물건 소유자·채무자 중 저장된 번호를 선택합니다.")
                 Text("8. 캘린더에서는 월 전체 조사 일정을 한눈에 확인합니다.")
                 Text("9. 전체 데이터시트에서는 모든 연도의 저장 건을 필터링하고 화면 크기를 조절해 확인합니다.")
@@ -973,7 +974,9 @@ private fun OcrRegisterScreenV29(vm: AppViewModel, onDone: () -> Unit, onCancel:
     var cameraSource by draft.cameraSource
     var preprocess by draft.preprocess
     var duplicates by remember { mutableStateOf<List<InvestigationCase>?>(null) }
-    var chooseDefaultAddress by remember { mutableStateOf(false) }
+    var chooseDefaultAddress by rememberUiState { mutableStateOf(false) }
+
+    LaunchedEffect(draft.saved.value) { if (draft.saved.value) onDone() }
 
     suspend fun persist() {
         saving = true
@@ -989,7 +992,7 @@ private fun OcrRegisterScreenV29(vm: AppViewModel, onDone: () -> Unit, onCancel:
         }
         cameraFile = null
         saving = false
-        onDone()
+        draft.saved.value = true
     }
 
     fun checkDuplicatesAndPersist() {
@@ -1047,6 +1050,7 @@ private fun OcrRegisterScreenV29(vm: AppViewModel, onDone: () -> Unit, onCancel:
 
     if (chooseDefaultAddress) DefaultAddressChoiceDialog(
         value = parsed,
+        allowCustom = false,
         onDismiss = { chooseDefaultAddress = false },
         onSelect = { selection ->
             parsed = selection
@@ -1077,7 +1081,7 @@ private fun OcrRegisterScreenV29(vm: AppViewModel, onDone: () -> Unit, onCancel:
         onError = { preprocess = it })
     val warnings = remember(parsed) { ocrWarningsV29(parsed) }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("조사의뢰서 등록") }, navigationIcon = { TextButton(onClick = { cameraFile?.delete(); onCancel() }) { Text("뒤로") } }) }) { pad ->
+    Scaffold(topBar = { TopAppBar(title = { Text("조사의뢰서 등록") }, navigationIcon = { TextButton(enabled = !saving, onClick = { cameraFile?.delete(); onCancel() }) { Text("뒤로") } }) }) { pad ->
         Column(Modifier.padding(pad).verticalScroll(rememberScrollState()).padding(16.dp)) {
             Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
