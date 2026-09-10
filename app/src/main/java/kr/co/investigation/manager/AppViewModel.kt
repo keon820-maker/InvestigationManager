@@ -16,15 +16,21 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.time.LocalDate
 import java.util.UUID
 
-class AppViewModel(app:Application):AndroidViewModel(app){
+class AppViewModel(
+    app:Application,
+    private val resolveAddress: suspend (String) -> Pair<Double, Double>?
+):AndroidViewModel(app){
+    constructor(app: Application): this(app, { address -> GeocoderService.resolve(app, address) })
     val db=AppDb.get(app)
     val ocrDraft = OcrRegistrationDraft()
     val detailDraft = androidx.compose.runtime.mutableStateOf(InvestigationCase(year = LocalDate.now().year))
+    val detailSaveStatus = androidx.compose.runtime.mutableStateOf(DetailSaveStatus())
     val sheetFilters = androidx.compose.runtime.mutableStateOf<Map<String, Set<String>>>(emptyMap())
     val sheetFilterDraft = androidx.compose.runtime.mutableStateOf<Set<String>>(emptySet())
     val sheetSelectionMode = androidx.compose.runtime.mutableStateOf(false)
@@ -36,7 +42,9 @@ class AppViewModel(app:Application):AndroidViewModel(app){
     val allCases=db.cases().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val deletedCases=db.cases().observeDeleted().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     private val _selected=MutableStateFlow<InvestigationCase?>(null); val selected=_selected.asStateFlow()
-    private val geocodeAttempted = mutableSetOf<String>()
+    private val geocodeAttempted = mutableMapOf<String, Long>()
+    private val geocodeQueue = Channel<InvestigationCase>(Channel.UNLIMITED)
+    private val caseWriteMutex = Mutex()
     private val syncIdentity = SyncIdentity(app)
     private val firebaseAuth = if (FirebaseBootstrap.isConfigured) FirebaseAuth.getInstance() else null
     private val syncRepository = if (FirebaseBootstrap.isConfigured) {
@@ -51,15 +59,17 @@ class AppViewModel(app:Application):AndroidViewModel(app){
 
     init {
         viewModelScope.launch {
-            cases.collect { list ->
-                list.filter {
-                    it.defaultAddress().isNotBlank() &&
-                        (it.propertyLatitude == null || it.propertyLongitude == null)
-                }.forEach { c ->
+            cases.collect { list -> list.forEach(::queueCoordinates) }
+        }
+        viewModelScope.launch {
+            for(c in geocodeQueue) {
+                try {
                     val address = c.defaultAddress()
-                    val key = "${c.id}|${c.normalizedDefaultAddressType()}|$address"
-                    if (!geocodeAttempted.add(key)) return@forEach
-                    val xy = GeocoderService.resolve(getApplication(), address)
+                    val latest = db.cases().get(c.id)
+                    if(latest == null || latest.deletedAt != null || latest.defaultAddress() != address ||
+                        latest.normalizedDefaultAddressType() != c.normalizedDefaultAddressType() ||
+                        (latest.propertyLatitude != null && latest.propertyLongitude != null)) continue
+                    val xy = resolveAddress(address)
                     if (xy != null) {
                         val updated = db.withTransaction {
                             val current = db.cases().get(c.id)
@@ -74,7 +84,8 @@ class AppViewModel(app:Application):AndroidViewModel(app){
                             scheduleSync()
                         }
                     }
-                }
+                } catch(cancelled: CancellationException) { throw cancelled }
+                  catch (_: Exception) { /* Coordinates are optional; the saved record stays available. */ }
             }
         }
         firebaseAuth?.let { auth ->
@@ -85,7 +96,19 @@ class AppViewModel(app:Application):AndroidViewModel(app){
     }
 
     fun setYear(y:Int){_year.value=y;_selected.value=null}
-    fun select(c:InvestigationCase?){_selected.value=c; if(c != null) detailDraft.value=c}
+    fun select(c:InvestigationCase?){
+        _selected.value=c
+        if(c != null) detailDraft.value=c
+        if(detailSaveStatus.value.caseId != c?.id) detailSaveStatus.value=DetailSaveStatus(caseId=c?.id ?: 0)
+    }
+
+    private fun queueCoordinates(c: InvestigationCase) {
+        if(c.defaultAddress().isBlank() || (c.propertyLatitude != null && c.propertyLongitude != null)) return
+        val key = "${c.id}|${c.normalizedDefaultAddressType()}|${c.defaultAddress()}"
+        if(geocodeAttempted[key] == c.updatedAt) return
+        geocodeAttempted[key] = c.updatedAt
+        geocodeQueue.trySend(c)
+    }
 
     suspend fun create(c:InvestigationCase):Long {
         val xy=c.defaultAddress().takeIf { it.isNotBlank() }
@@ -105,26 +128,60 @@ class AppViewModel(app:Application):AndroidViewModel(app){
         return id
     }
 
-    fun update(c:InvestigationCase){
-        viewModelScope.launch{
-            val xy=c.defaultAddress().takeIf { it.isNotBlank() }
-                ?.let { GeocoderService.resolve(getApplication(),it) }
-            val updated=c.copy(
-                propertyLatitude=xy?.first,
-                propertyLongitude=xy?.second,
-                updatedAt=System.currentTimeMillis(),
-                cloudId = c.cloudId.ifBlank { UUID.randomUUID().toString() },
-                modifiedByDevice = syncIdentity.deviceId,
-                lastSyncedAt = null
-            )
+    /** Commit edits before any network/geocoder work. Serialize local writes in click order. */
+    private suspend fun persistEdits(c: InvestigationCase): InvestigationCase? = caseWriteMutex.withLock {
             val saved = db.withTransaction {
                 val current = db.cases().get(c.id)
-                if(current == null || current.deletedAt != null) false
-                else { db.cases().update(updated); true }
+                if(current == null || current.deletedAt != null) null
+                else {
+                    val sameLocation = current.defaultAddress() == c.defaultAddress() &&
+                        current.normalizedDefaultAddressType() == c.normalizedDefaultAddressType()
+                    c.copy(
+                        propertyLatitude = if(sameLocation) current.propertyLatitude else null,
+                        propertyLongitude = if(sameLocation) current.propertyLongitude else null,
+                        createdAt = current.createdAt,
+                        deletedAt = null,
+                        updatedAt = maxOf(System.currentTimeMillis(), current.updatedAt + 1),
+                        cloudId = current.cloudId.ifBlank { c.cloudId.ifBlank { UUID.randomUUID().toString() } },
+                        modifiedByDevice = syncIdentity.deviceId,
+                        lastSyncedAt = null
+                    ).also { db.cases().update(it) }
+                }
             }
-            if(saved) {
-                if(_selected.value?.id == c.id) _selected.value=updated
+            if(saved != null) {
+                if(_selected.value?.id == c.id) _selected.value=saved
+                if(detailDraft.value == c) detailDraft.value=saved
                 scheduleSync()
+                queueCoordinates(saved)
+            }
+            saved
+    }
+
+    fun update(c:InvestigationCase){
+        viewModelScope.launch { persistEdits(c) }
+    }
+
+    fun clearDetailSaveFeedback(caseId: Long) {
+        val state = detailSaveStatus.value
+        if(state.caseId == caseId && !state.busy) detailSaveStatus.value = DetailSaveStatus(caseId=caseId)
+    }
+
+    fun saveDetail(c: InvestigationCase) {
+        if(detailSaveStatus.value.caseId == c.id && detailSaveStatus.value.busy) return
+        detailSaveStatus.value = DetailSaveStatus(caseId=c.id, busy=true)
+        viewModelScope.launch {
+            try {
+                val saved = persistEdits(c)
+                if(detailSaveStatus.value.caseId == c.id) detailSaveStatus.value = if(saved != null)
+                    DetailSaveStatus(caseId=c.id, message="저장했습니다.")
+                else DetailSaveStatus(caseId=c.id, message="조사건을 찾을 수 없습니다. 목록에서 다시 열어주세요.", failed=true)
+            } catch(cancelled: CancellationException) { throw cancelled }
+              catch (_: Exception) {
+                if(detailSaveStatus.value.caseId == c.id) detailSaveStatus.value = DetailSaveStatus(
+                    caseId=c.id, message="저장하지 못했습니다. 저장 공간을 확인한 뒤 다시 시도해주세요.", failed=true)
+            } finally {
+                if(detailSaveStatus.value.caseId == c.id && detailSaveStatus.value.busy)
+                    detailSaveStatus.value = detailSaveStatus.value.copy(busy=false)
             }
         }
     }

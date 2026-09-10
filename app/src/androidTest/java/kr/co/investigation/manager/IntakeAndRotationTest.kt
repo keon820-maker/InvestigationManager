@@ -9,6 +9,7 @@ import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.activity.compose.setContent
@@ -20,6 +21,8 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.core.app.ApplicationProvider
 import androidx.lifecycle.ViewModelProvider
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.espresso.intent.Intents
 import androidx.test.espresso.intent.Intents.intended
@@ -269,7 +272,7 @@ class IntakeAndRotationTest {
         ui.onNodeWithTag("sheet-row-$smallId").performClick()
         ui.onNode(hasSetTextAction() and hasText("관리번호")).performTextReplacement("검사-저장")
         closeSoftKeyboard()
-        ui.onNodeWithText("변경 저장").performScrollTo().performClick()
+        ui.onNodeWithTag("detail-save").assertIsDisplayed().performClick()
         ui.onNodeWithText("이 위치로 저장").assertDoesNotExist()
         ui.waitUntil(10_000) { runBlocking { AppDb.get(context).cases().get(smallId)!!.managementNo == "검사-저장" } }
         ui.onNodeWithText("주소지 변경").performScrollTo().performClick()
@@ -285,5 +288,42 @@ class IntakeAndRotationTest {
         }
         // Until ordinary Save, the persistent record keeps the old address.
         assertEquals("", runBlocking { AppDb.get(context).cases().get(smallId)!!.customMapAddress })
+    }
+
+    @Test fun phoneSaveRemainsVisibleAndClickableWithTheKeyboardOpen() {
+        fun shell(command: String): String = ParcelFileDescriptor.AutoCloseInputStream(
+            InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)
+        ).bufferedReader().use { it.readText().trim() }
+        val previousIme = shell("settings get secure show_ime_with_hard_keyboard")
+        try {
+            shell("wm size 1080x2400")
+            shell("wm density 420")
+            shell("settings put secure show_ime_with_hard_keyboard 1")
+            ui.runOnUiThread { ui.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
+            ui.waitUntil(20_000) { ui.activity.resources.configuration.screenWidthDp in 320..480 }
+            // A cached synthetic address also verifies that ordinary text edits preserve its marker.
+            runBlocking {
+                val dao = AppDb.get(context).cases()
+                dao.update(dao.get(smallId)!!.copy(propertyAddress="검증시 기존주소 1",propertyLatitude=10.0,propertyLongitude=20.0))
+            }
+            openMenu("전체 데이터시트")
+            ui.onNodeWithTag("sheet-row-$smallId").performClick()
+            ui.onNode(hasSetTextAction() and hasText("관리번호")).performScrollTo().performClick()
+                .performTextReplacement("검사-휴대폰저장")
+            ui.waitUntil(15_000) {
+                ViewCompat.getRootWindowInsets(ui.activity.window.decorView)?.isVisible(WindowInsetsCompat.Type.ime()) == true
+            }
+            ui.onNodeWithTag("detail-save").assertIsDisplayed().assertIsEnabled().performClick()
+            ui.waitUntil(10_000) { runBlocking { AppDb.get(context).cases().get(smallId)!!.managementNo == "검사-휴대폰저장" } }
+            ui.onNodeWithTag("detail-save-status").assertTextEquals("저장했습니다.")
+            val saved = runBlocking { AppDb.get(context).cases().get(smallId)!! }
+            assertEquals(10.0,saved.propertyLatitude!!,0.0)
+            assertEquals(20.0,saved.propertyLongitude!!,0.0)
+        } finally {
+            closeSoftKeyboard()
+            shell(if(previousIme == "null") "settings delete secure show_ime_with_hard_keyboard" else "settings put secure show_ime_with_hard_keyboard $previousIme")
+            shell("wm size reset")
+            shell("wm density reset")
+        }
     }
 }

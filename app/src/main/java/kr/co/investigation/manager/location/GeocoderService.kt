@@ -1,12 +1,24 @@
 package kr.co.investigation.manager.location
 
+import android.annotation.TargetApi
 import android.content.Context
+import android.location.Address
 import android.location.Geocoder
+import android.os.Build
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.resume
 
 object GeocoderService {
+    private const val RESOLVE_TIMEOUT_MS = 8_000L
+
     suspend fun resolve(context:Context,address:String):Pair<Double,Double>? = withContext(Dispatchers.IO) {
         if(address.isBlank()) return@withContext null
 
@@ -32,17 +44,60 @@ object GeocoderService {
         variants += expanded
 
         val geocoder = Geocoder(context, Locale.KOREA)
-        for(query in variants.filter { it.isNotBlank() }) {
-            val found = runCatching {
-                @Suppress("DEPRECATION")
-                geocoder.getFromLocationName(query, 1)
-                    ?.firstOrNull()
-                    ?.let { it.latitude to it.longitude }
-            }.getOrNull()
-            if(found != null) return@withContext found
+        // One budget covers every variant, rather than starting a new timeout per query.
+        withTimeoutOrNull(RESOLVE_TIMEOUT_MS) {
+            for(query in variants.filter { it.isNotBlank() }) {
+                currentCoroutineContext().ensureActive()
+                val found = try {
+                    val addresses = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        resolveAsync(geocoder, query)
+                    } else {
+                        // Pre-33 has no cancellable API: this IO call can outlive the budget.
+                        // Cancellation is checked on return, so no later variants are started.
+                        @Suppress("DEPRECATION")
+                        geocoder.getFromLocationName(query, 1)
+                    }
+                    addresses?.firstOrNull()?.let { it.latitude to it.longitude }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    null
+                }
+                currentCoroutineContext().ensureActive()
+                if(found != null) return@withTimeoutOrNull found
+            }
+            null
         }
-        null
     }
+
+    @TargetApi(Build.VERSION_CODES.TIRAMISU)
+    private suspend fun resolveAsync(geocoder: Geocoder, query: String): List<Address>? =
+        suspendCancellableCoroutine { continuation ->
+            val completed = AtomicBoolean(false)
+            fun complete(addresses: List<Address>?) {
+                if (completed.compareAndSet(false, true)) continuation.resume(addresses)
+            }
+
+            // Geocoder exposes no request cancellation. Ignore callbacks after cancellation
+            // and guard against a provider delivering more than one terminal callback.
+            continuation.invokeOnCancellation { completed.set(true) }
+            if (!continuation.isActive) return@suspendCancellableCoroutine
+            try {
+                geocoder.getFromLocationName(query, 1, object : Geocoder.GeocodeListener {
+                    override fun onGeocode(addresses: MutableList<Address>) {
+                        complete(addresses)
+                    }
+
+                    override fun onError(errorMessage: String?) {
+                        complete(null)
+                    }
+                })
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                complete(null)
+            }
+        }
 
     private fun expandProvince(value: String): String {
         val pairs = listOf(
