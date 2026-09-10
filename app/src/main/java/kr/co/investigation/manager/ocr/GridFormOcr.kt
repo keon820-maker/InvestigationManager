@@ -17,27 +17,50 @@ import java.time.LocalDate
 
 /** Verified printed grid is authoritative. Legacy repairs never overwrite this result. */
 internal object GridFormOcr {
-    suspend fun recognize(source: DocumentNormalizer.Result): OcrService.OcrResult? {
+    suspend fun recognize(source: DocumentNormalizer.Result, batchCells: Boolean = true): OcrService.OcrResult? {
         val bitmap = source.bitmap
         val cells = TableCellDetector.detect(bitmap).map { GridFormLayout.Cell(it.left, it.top, it.right, it.bottom) }
         val layout = GridFormLayout.resolve(cells) ?: return null
         val client = TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
         try {
             // Topology alone is insufficient: confirm independent labels before assigning roles.
-            val labels = layout.labelCells.mapValues { (_, cell) -> read(client, bitmap, cell).replace(Regex("\\s+"), "") }
+            val labelReads = if (batchCells) CellBatchReader.read(client, bitmap,
+                layout.labelCells.map { CellBatchReader.Input(it.key, it.value) }) else emptyMap()
+            val expectedLabels = mapOf("debtor" to "채무자", "property" to "소재지", "tenant" to "차인")
+            val labels = layout.labelCells.mapValues { (key, cell) ->
+                val candidate = labelReads[key].orEmpty().replace(Regex("\\s+"), "")
+                if (candidate.contains(expectedLabels.getValue(key))) candidate
+                else read(client, bitmap, cell).replace(Regex("\\s+"), "")
+            }
             if (labels["debtor"]?.contains("채무자") != true ||
                 labels["property"]?.contains("소재지") != true ||
                 labels["tenant"]?.contains("차인") != true) return null
 
             val review = linkedSetOf<String>()
             val raw = linkedMapOf<String, String>()
+            val valueCells = layout.fields.toMutableMap().apply {
+                layout.tenants.forEachIndexed { i, pair ->
+                    put("tenant${i + 1}.name", pair.first); put("tenant${i + 1}.phone", pair.second)
+                }
+                put("requestNotes", layout.notes)
+            }
+            val emptyTenants = valueCells.filter { (key, cell) -> key.startsWith("tenant") && !CellImageProcessing.hasInk(bitmap, cell) }.keys
+            val inputs = valueCells.filterKeys { it !in emptyTenants }.map { CellBatchReader.Input(it.key, it.value) }
+            val originals = if (batchCells) CellBatchReader.read(client, bitmap, inputs) else emptyMap()
+            val contrasts = if (batchCells) CellBatchReader.read(client, bitmap, inputs, enhanced = true) else emptyMap()
             suspend fun value(key: String, cell: GridFormLayout.Cell, normalize: (String) -> String): String {
-                if (key.startsWith("tenant") && !CellImageProcessing.hasInk(bitmap, cell)) {
+                if (key in emptyTenants) {
                     raw[key] = ""
                     return ""
                 }
-                val first = read(client, bitmap, cell)
-                val second = read(client, bitmap, cell, enhanced = true)
+                var first = if (batchCells) originals[key].orEmpty() else read(client, bitmap, cell)
+                var second = if (batchCells) contrasts[key].orEmpty() else read(client, bitmap, cell, enhanced = true)
+                // A rejected/missing batch line can only be retried in its own source cell.
+                if (batchCells && first.isBlank() && second.isBlank() && CellImageProcessing.hasInk(bitmap, cell)) {
+                    first = read(client, bitmap, cell)
+                    second = read(client, bitmap, cell, enhanced = true)
+                    if (first.isBlank() && second.isBlank()) review += key
+                }
                 raw[key] = first
                 val choice = GridCellValues.choose(first, second, normalize)
                 if (choice.review || (first.isNotBlank() && choice.value.isBlank())) {
@@ -62,6 +85,7 @@ internal object GridFormOcr {
             val propertyType = field("propertyType")
             val propertyAddress = field("propertyAddress", GridCellValues::address)
             val ownerIdentity = field("ownerIdentity", GridCellValues::identity)
+            if (ownerIdentity.isNotBlank() && !Regex("\\(\\d{6}").containsMatchIn(ownerIdentity)) review += "ownerIdentity"
             // The model has one owner contact field; retain the first printed number, flag multiple.
             val ownerPhone = field("ownerPhone") { GridCellValues.phones(it).joinToString(" / ") }
             if (ownerPhone.contains(" / ")) review += "ownerPhone"

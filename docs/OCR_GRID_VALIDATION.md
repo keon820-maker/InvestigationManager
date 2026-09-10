@@ -22,6 +22,10 @@ The grid route now:
    its values, invent a tenant from a debtor phone, or substitute a guessed building name.
 6. Uses the bundled Korean ML Kit recognizer. The primary route does not send images to
    a cloud OCR provider. It omits the fixed investigator row from the header crop.
+7. Batches isolated crops into panels grouped by width, without rescaling the crops.
+   Whitespace separates cells; a recognized line must fit one cell to be assigned.
+   Missing reads with visible ink are retried only in that same source cell. A device
+   regression test verifies distinct contacts after batch reordering and wrapped lines.
 
 ## Verification
 
@@ -48,6 +52,10 @@ For local private testing, transfer images using `adb exec-in run-as` to the val
 app's `files/private-ocr-input/`, then run only `PrivateOcrFixtureTest` with instrumentation
 argument `privateFixtures=true`. Results are in `files/private-ocr-output/`. Do not commit
 or upload those directories, real images, expected values or generated OCR reports to CI.
+Each local result includes the exact source filename and SHA-256 to prevent confusing
+documents after a re-upload. Optional `sampleOffset`/`sampleLimit` select a bounded batch;
+`gridOnly=true` tests the primary grid route, and `individualCells=true` disables batching
+for comparisons within that route.
 
 A passed build is not a claim of 100% OCR accuracy. Compare critical fields with the source
 before saving, especially handwriting, blurred text and conflicting reads. Upscaling
