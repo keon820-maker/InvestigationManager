@@ -32,7 +32,9 @@ object OriginalFileStore {
     }
 
     fun createCameraTarget(context:Context, year:Int, tempKey:String):File {
-        return File(context.filesDir,"originals/$year/pending").apply{mkdirs()}.let { File(it,"camera_${tempKey}_${System.currentTimeMillis()}.jpg") }
+        val dir = File(context.filesDir, "originals/$year/pending")
+        check(dir.isDirectory || dir.mkdirs()) { "사진 저장 폴더를 만들 수 없습니다." }
+        return File.createTempFile("camera_${tempKey}_", ".jpg", dir)
     }
 
     suspend fun finalizeCamera(file:File,caseId:Long,type:String):Saved = withContext(Dispatchers.IO) {

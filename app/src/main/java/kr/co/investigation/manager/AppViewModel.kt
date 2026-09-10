@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.room.withTransaction
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.firestore.ListenerRegistration
@@ -12,6 +13,7 @@ import kr.co.investigation.manager.location.GeocoderService
 import kr.co.investigation.manager.sync.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -21,6 +23,14 @@ import java.util.UUID
 
 class AppViewModel(app:Application):AndroidViewModel(app){
     val db=AppDb.get(app)
+    val ocrDraft = OcrRegistrationDraft()
+    val detailDraft = androidx.compose.runtime.mutableStateOf(InvestigationCase(year = LocalDate.now().year))
+    val sheetFilters = androidx.compose.runtime.mutableStateOf<Map<String, Set<String>>>(emptyMap())
+    val sheetFilterDraft = androidx.compose.runtime.mutableStateOf<Set<String>>(emptySet())
+    val sheetSelectionMode = androidx.compose.runtime.mutableStateOf(false)
+    val sheetSelectedIds = androidx.compose.runtime.mutableStateOf<Set<Long>>(emptySet())
+    val sheetDeleting = androidx.compose.runtime.mutableStateOf(false)
+    val sheetDeleteError = androidx.compose.runtime.mutableStateOf("")
     private val _year=MutableStateFlow(LocalDate.now().year); val year=_year.asStateFlow()
     val cases=_year.flatMapLatest{db.cases().observeYear(it)}.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val allCases=db.cases().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -51,16 +61,18 @@ class AppViewModel(app:Application):AndroidViewModel(app){
                     if (!geocodeAttempted.add(key)) return@forEach
                     val xy = GeocoderService.resolve(getApplication(), address)
                     if (xy != null) {
-                        val updated = c.copy(
-                            propertyLatitude = xy.first,
-                            propertyLongitude = xy.second,
-                            updatedAt = System.currentTimeMillis(),
-                            modifiedByDevice = syncIdentity.deviceId,
-                            lastSyncedAt = null
-                        )
-                        db.cases().update(updated)
-                        if (_selected.value?.id == c.id) _selected.value = updated
-                        scheduleSync()
+                        val updated = db.withTransaction {
+                            val current = db.cases().get(c.id)
+                            if(current == null || current.deletedAt != null || current.defaultAddress() != address ||
+                                current.normalizedDefaultAddressType() != c.normalizedDefaultAddressType()) null
+                            else current.copy(propertyLatitude = xy.first, propertyLongitude = xy.second,
+                                updatedAt = System.currentTimeMillis(), modifiedByDevice = syncIdentity.deviceId,
+                                lastSyncedAt = null).also { db.cases().update(it) }
+                        }
+                        if(updated != null) {
+                            if (_selected.value?.id == c.id) _selected.value = updated
+                            scheduleSync()
+                        }
                     }
                 }
             }
@@ -73,7 +85,7 @@ class AppViewModel(app:Application):AndroidViewModel(app){
     }
 
     fun setYear(y:Int){_year.value=y;_selected.value=null}
-    fun select(c:InvestigationCase?){_selected.value=c}
+    fun select(c:InvestigationCase?){_selected.value=c; if(c != null) detailDraft.value=c}
 
     suspend fun create(c:InvestigationCase):Long {
         val xy=c.defaultAddress().takeIf { it.isNotBlank() }
@@ -105,9 +117,15 @@ class AppViewModel(app:Application):AndroidViewModel(app){
                 modifiedByDevice = syncIdentity.deviceId,
                 lastSyncedAt = null
             )
-            db.cases().update(updated)
-            _selected.value=updated
-            scheduleSync()
+            val saved = db.withTransaction {
+                val current = db.cases().get(c.id)
+                if(current == null || current.deletedAt != null) false
+                else { db.cases().update(updated); true }
+            }
+            if(saved) {
+                if(_selected.value?.id == c.id) _selected.value=updated
+                scheduleSync()
+            }
         }
     }
 
@@ -221,19 +239,38 @@ class AppViewModel(app:Application):AndroidViewModel(app){
         return id
     }
 
-    suspend fun deleteCase(c: InvestigationCase) {
+    suspend fun deleteCase(c: InvestigationCase) = deleteCases(setOf(c.id))
+
+    /** Read fresh rows and move the entire selection to the trash atomically. Originals stay intact. */
+    suspend fun deleteCases(ids: Set<Long>) {
+        if (ids.isEmpty()) return
         val now = System.currentTimeMillis()
-        db.cases().update(
-            c.copy(
-                deletedAt = now,
-                updatedAt = now,
-                cloudId = c.cloudId.ifBlank { UUID.randomUUID().toString() },
-                modifiedByDevice = syncIdentity.deviceId,
-                lastSyncedAt = null
-            )
-        )
-        if (_selected.value?.id == c.id) _selected.value = null
+        db.withTransaction {
+            ids.forEach { id ->
+                db.cases().get(id)?.takeIf { it.deletedAt == null }?.let { current ->
+                    db.cases().update(current.copy(deletedAt = now, updatedAt = now,
+                        cloudId = current.cloudId.ifBlank { UUID.randomUUID().toString() },
+                        modifiedByDevice = syncIdentity.deviceId, lastSyncedAt = null))
+                }
+            }
+        }
+        if (_selected.value?.id in ids) _selected.value = null
         scheduleSync()
+    }
+
+    fun deleteSheetSelection(ids: Set<Long>) {
+        if (sheetDeleting.value || ids.isEmpty()) return
+        sheetDeleting.value = true
+        sheetDeleteError.value = ""
+        viewModelScope.launch {
+            try {
+                deleteCases(ids)
+                sheetSelectedIds.value = emptySet()
+                sheetSelectionMode.value = false
+            } catch (cancelled: CancellationException) { throw cancelled }
+              catch (_: Exception) { sheetDeleteError.value = "삭제하지 못했습니다. 다시 시도해주세요." }
+            finally { sheetDeleting.value = false }
+        }
     }
 
     fun restoreCase(c: InvestigationCase) {

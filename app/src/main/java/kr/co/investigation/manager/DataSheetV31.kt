@@ -3,6 +3,7 @@
 package kr.co.investigation.manager
 
 import androidx.compose.foundation.background
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.calculateZoom
@@ -18,6 +19,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -36,14 +41,24 @@ import java.util.Locale
 fun DataSheetScreenV31(
     vm: AppViewModel,
     onBack: () -> Unit,
-    onOpen: (InvestigationCase) -> Unit
+    onOpen: (InvestigationCase) -> Unit,
+    onPrint: ((SheetPrintSnapshot) -> Unit)? = null
 ) {
+    val context = LocalContext.current
     val allCases by vm.allCases.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
-    var yearFilter by rememberSaveable { mutableStateOf<Int?>(null) }
     var statusFilter by rememberSaveable { mutableStateOf(DATA_ALL_V31) }
     var scheduleFilter by rememberSaveable { mutableStateOf(DATA_SCHEDULE_ALL_V31) }
-    var yearMenu by remember { mutableStateOf(false) }
+    var sortColumn by rememberSaveable { mutableStateOf("번호") }
+    var ascending by rememberSaveable { mutableStateOf(true) }
+    var columnFilters by vm.sheetFilters
+    var filterDraft by vm.sheetFilterDraft
+    var filterColumn by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectionMode by vm.sheetSelectionMode
+    var selectedIds by vm.sheetSelectedIds
+    val deleting by vm.sheetDeleting
+    val deleteError by vm.sheetDeleteError
+    var confirmDelete by rememberSaveable { mutableStateOf(false) }
     var zoom by rememberSaveable { mutableFloatStateOf(1f) }
     val today = LocalDate.now()
     val horizontalState = rememberScrollState()
@@ -52,12 +67,11 @@ fun DataSheetScreenV31(
         zoom = value.coerceIn(DATA_MIN_ZOOM_V31, DATA_MAX_ZOOM_V31)
     }
 
-    val years = remember(allCases) { allCases.map { it.year }.distinct().sortedDescending() }
-    val filtered = remember(allCases, query, yearFilter, statusFilter, scheduleFilter, today) {
+    val rowNumbers = remember(allCases) { allCases.mapIndexed { index, c -> c.id to (index + 1) }.toMap() }
+    val searched = remember(allCases, query, statusFilter, scheduleFilter, today) {
         val needle = query.trim()
         allCases.filter { c ->
             val matchesQuery = needle.isBlank() || dataSheetSearchValuesV31(c).any { it.contains(needle, ignoreCase = true) }
-            val matchesYear = yearFilter == null || c.year == yearFilter
             val matchesStatus = statusFilter == DATA_ALL_V31 || normalizedStatusV31(c.status) == statusFilter
             val matchesSchedule = when (scheduleFilter) {
                 DATA_SCHEDULE_ASSIGNED_V31 -> c.plannedDate.isNotBlank()
@@ -65,20 +79,18 @@ fun DataSheetScreenV31(
                 DATA_SCHEDULE_DELAYED_V31 -> isDelayedV31(c, today)
                 else -> true
             }
-            matchesQuery && matchesYear && matchesStatus && matchesSchedule
+            matchesQuery && matchesStatus && matchesSchedule
         }
     }
 
     val columns = remember {
         listOf(
             DataColumnV31("번호", 58.dp) { "" },
-            DataColumnV31("연도", 70.dp) { it.year.toString() },
             DataColumnV31("관리번호", 170.dp) { it.managementNo },
             DataColumnV31("진행도", 90.dp) { normalizedStatusV31(it.status) },
             DataColumnV31("의뢰일", 110.dp) { it.requestDate },
             DataColumnV31("조사 예정일", 120.dp) { it.plannedDate },
             DataColumnV31("완료 요청일", 120.dp) { it.dueDate },
-            DataColumnV31("방문순서", 86.dp) { if (it.routeOrder > 0) it.routeOrder.toString() else "" },
             DataColumnV31("채무자", 120.dp) { it.debtorName },
             DataColumnV31("채무자 연락처", 145.dp) { listOf(it.mobile, it.phone).filter(String::isNotBlank).distinct().joinToString(" / ") },
             DataColumnV31("물건 종류", 110.dp) { it.propertyType },
@@ -87,6 +99,7 @@ fun DataSheetScreenV31(
             DataColumnV31("소유자 연락처", 140.dp) { it.ownerPhone },
             DataColumnV31("소유자 주소", 280.dp) { it.ownerAddress },
             DataColumnV31("기본 주소지", 145.dp) { it.defaultAddressLabel() },
+            DataColumnV31("직접입력 주소", 280.dp) { it.customMapAddress },
             DataColumnV31("조사 종류", 125.dp) { it.investigationType },
             DataColumnV31("대출 종류", 120.dp) { it.loanType },
             DataColumnV31("영업점", 135.dp) { it.branch },
@@ -98,24 +111,97 @@ fun DataSheetScreenV31(
             DataColumnV31("조사 완료", 145.dp) { formatTimestampV31(it.completedAt) }
         )
     }
-    val tableWidth = columns.fold(0.dp) { total, column -> total + column.width * zoom } + columns.size.dp
+    fun cellValue(c: InvestigationCase, column: DataColumnV31): String =
+        if(column.label == "번호") rowNumbers.getValue(c.id).toString() else column.value(c)
+    val filtered = remember(searched, columns, columnFilters, rowNumbers) {
+        searched.filter { c -> columnFilters.all { (label, values) ->
+            val column = columns.firstOrNull { it.label == label }
+            column == null || cellValue(c, column).trim() in values
+        } }
+    }
+    val sorted = remember(filtered, columns, rowNumbers, sortColumn, ascending) {
+        val column = columns.firstOrNull { it.label == sortColumn } ?: columns.first()
+        sortDataSheetRows(filtered, ascending) {
+            if (column.label == "번호") rowNumbers.getValue(it.id).toString() else column.value(it)
+        }
+    }
+    val visibleIds = remember(sorted) { sorted.map { it.id }.toSet() }
+    val selectedVisible = selectedIds.intersect(visibleIds)
+    LaunchedEffect(visibleIds) { selectedIds = selectedIds.intersect(visibleIds) }
+    fun cancelSelection() {
+        if (deleting) return
+        selectionMode = false; selectedIds = emptySet(); confirmDelete = false
+        vm.sheetDeleteError.value = ""
+    }
+    BackHandler(selectionMode) { cancelSelection() }
+    if (confirmDelete && selectionMode) AlertDialog(
+        onDismissRequest = { confirmDelete = false },
+        title = { Text("선택한 조사건 삭제") },
+        text = { Text("선택한 ${selectedVisible.size}건을 휴지통으로 이동합니다. 휴지통에서 복원할 수 있습니다.") },
+        confirmButton = { TextButton(enabled = selectedVisible.isNotEmpty() && !deleting,
+            onClick = { confirmDelete = false; vm.deleteSheetSelection(selectedVisible.toSet()) },
+            modifier = Modifier.testTag("sheet-confirm-delete")) { Text("삭제") } },
+        dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("취소") } })
+    fun optionsFor(column: DataColumnV31) = allCases.map { cellValue(it, column).trim() }.distinct().sorted()
+    columns.firstOrNull { it.label == filterColumn }?.let { column ->
+        val options = optionsFor(column)
+        SheetColumnFilterDialog(column.label, options, filterDraft,
+            onChange = { filterDraft = it },
+            onApply = {
+                columnFilters = if(filterDraft.containsAll(options)) columnFilters - column.label
+                    else columnFilters + (column.label to filterDraft.toSet())
+                filterColumn = null
+            },
+            onClear = { columnFilters = columnFilters - column.label; filterColumn = null },
+            onDismiss = { filterColumn = null })
+    }
+    fun printVisibleRows() {
+        val snapshot = SheetPrintSnapshot(
+            columns.map { SheetPrintColumn(it.label, it.width.value) },
+            sorted.map { c -> columns.map { cellValue(c, it) } },
+            buildString {
+                append("정렬: $sortColumn ${if(ascending) "오름차순" else "내림차순"}")
+                if(query.isNotBlank()) append(" · 검색: ").append(query.take(40))
+                append(" · $statusFilter · $scheduleFilter · 열 필터 ${columnFilters.size}개")
+            })
+        if(onPrint != null) onPrint(snapshot) else printDataSheet(context, snapshot)
+    }
+    val tableWidth = columns.fold(0.dp) { total, column -> total + column.width * zoom } + columns.size.dp +
+        if(selectionMode) 52.dp else 0.dp
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Column {
-                        Text("전체 데이터시트")
-                        Text("전체 연도 · 완료 포함", style = MaterialTheme.typography.labelMedium)
+                        Text(if(selectionMode) "삭제할 건 선택" else "전체 데이터시트")
+                        Text("전체 데이터 · 완료 포함", style = MaterialTheme.typography.labelMedium)
                     }
                 },
-                navigationIcon = { TextButton(onClick = onBack) { Text("뒤로") } },
-                actions = { Text("${filtered.size}/${allCases.size}건", modifier = Modifier.padding(end = 14.dp)) }
+                navigationIcon = { TextButton(enabled = !deleting,
+                    onClick = { if(selectionMode) cancelSelection() else onBack() }) { Text(if(selectionMode) "취소" else "뒤로") } },
+                actions = {
+                    Text("${filtered.size}/${allCases.size}건", modifier = Modifier.padding(end = 4.dp))
+                    if(selectionMode) TextButton(onClick = { confirmDelete = true },
+                        enabled = selectedVisible.isNotEmpty() && !deleting, modifier = Modifier.testTag("sheet-delete-selected")) {
+                        Text(if(deleting) "삭제 중…" else "삭제(${selectedVisible.size})")
+                    } else {
+                        TextButton(onClick = { selectedIds = emptySet(); selectionMode = true }, enabled = sorted.isNotEmpty()) { Text("삭제") }
+                        TextButton(onClick = ::printVisibleRows, enabled = sorted.isNotEmpty(), modifier = Modifier.testTag("sheet-print")) { Text("인쇄") }
+                    }
+                }
             )
         }
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
             Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                if(selectionMode) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = visibleIds.isNotEmpty() && selectedVisible == visibleIds, enabled = !deleting,
+                        onCheckedChange = { selectedIds = if(it) visibleIds else emptySet() },
+                        modifier = Modifier.testTag("sheet-select-all"))
+                    Text("현재 표시 ${visibleIds.size}건 전체 선택 · ${selectedVisible.size}건 선택됨", style = MaterialTheme.typography.bodySmall)
+                }
+                if(deleteError.isNotBlank()) Text(deleteError, color = MaterialTheme.colorScheme.error)
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
@@ -125,7 +211,7 @@ fun DataSheetScreenV31(
                         if (query.isNotBlank()) TextButton(onClick = { query = "" }) { Text("지우기") }
                     },
                     shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().testTag("sheet-search")
                 )
                 Spacer(Modifier.height(7.dp))
                 Row(
@@ -133,25 +219,6 @@ fun DataSheetScreenV31(
                     horizontalArrangement = Arrangement.spacedBy(7.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box {
-                        FilterChip(
-                            selected = yearFilter != null,
-                            onClick = { yearMenu = true },
-                            label = { Text(yearFilter?.let { "${it}년" } ?: "전체 연도") }
-                        )
-                        DropdownMenu(expanded = yearMenu, onDismissRequest = { yearMenu = false }) {
-                            DropdownMenuItem(
-                                text = { Text("전체 연도") },
-                                onClick = { yearFilter = null; yearMenu = false }
-                            )
-                            years.forEach { year ->
-                                DropdownMenuItem(
-                                    text = { Text("${year}년") },
-                                    onClick = { yearFilter = year; yearMenu = false }
-                                )
-                            }
-                        }
-                    }
                     listOf(DATA_ALL_V31, DATA_NEW_V31, DATA_PROGRESS_V31, DATA_DONE_V31).forEach { status ->
                         FilterChip(
                             selected = statusFilter == status,
@@ -175,7 +242,7 @@ fun DataSheetScreenV31(
                 }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "행을 누르면 상세화면 · 표는 좌우 이동/두 손가락 확대축소",
+                        "열 제목: 정렬 · 열 필터: 값 선택 · 인쇄: 현재 조건의 행",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f)
@@ -184,10 +251,13 @@ fun DataSheetScreenV31(
                     TextButton(onClick = { changeZoom(1f) }) { Text("${(zoom * 100).toInt()}%") }
                     TextButton(onClick = { changeZoom(zoom + .1f) }, enabled = zoom < DATA_MAX_ZOOM_V31) { Text("＋") }
                 }
+                if(columnFilters.isNotEmpty()) TextButton(onClick = { columnFilters = emptyMap() }) {
+                    Text("열 필터 ${columnFilters.size}개 적용 중 · 모두 해제")
+                }
             }
             HorizontalDivider()
 
-            if (filtered.isEmpty()) {
+            if (allCases.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(if (allCases.isEmpty()) "저장된 조사 데이터가 없습니다." else "필터 조건에 맞는 데이터가 없습니다.")
                 }
@@ -211,11 +281,24 @@ fun DataSheetScreenV31(
                         .horizontalScroll(horizontalState)
                 ) {
                     Column(Modifier.width(tableWidth).fillMaxHeight()) {
-                        DataSheetHeaderV31(columns, zoom)
+                        DataSheetHeaderV31(columns, zoom, sortColumn, ascending, columnFilters.keys, selectionMode,
+                            onFilter = { label ->
+                                val column = columns.first { it.label == label }
+                                filterDraft = columnFilters[label] ?: optionsFor(column).toSet()
+                                filterColumn = label
+                            }) { label ->
+                            if (sortColumn == label) ascending = !ascending
+                            else { sortColumn = label; ascending = true }
+                        }
                         HorizontalDivider()
+                        if(sorted.isEmpty()) Text("필터 조건에 맞는 데이터가 없습니다.", modifier = Modifier.padding(16.dp))
                         LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
-                            itemsIndexed(filtered, key = { _, c -> c.id }) { index, c ->
-                                DataSheetRowV31(index, c, columns, zoom, onOpen)
+                            itemsIndexed(sorted, key = { _, c -> c.id }) { index, c ->
+                                DataSheetRowV31(index, rowNumbers.getValue(c.id), c, columns, zoom,
+                                    selectionMode, c.id in selectedVisible, !deleting) { row ->
+                                    if(selectionMode) selectedIds = if(row.id in selectedIds) selectedIds - row.id else selectedIds + row.id
+                                    else onOpen(row)
+                                }
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .75f))
                             }
                         }
@@ -233,21 +316,31 @@ private data class DataColumnV31(
 )
 
 @Composable
-private fun DataSheetHeaderV31(columns: List<DataColumnV31>, zoom: Float) {
+private fun DataSheetHeaderV31(columns: List<DataColumnV31>, zoom: Float, sortColumn: String, ascending: Boolean,
+    activeFilters: Set<String>, selectionMode: Boolean, onFilter: (String) -> Unit, onSort: (String) -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            .height(44.dp * zoom)
+            .height((76.dp * zoom).coerceAtLeast(68.dp))
             .background(MaterialTheme.colorScheme.primaryContainer),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if(selectionMode) Box(Modifier.width(52.dp), contentAlignment = Alignment.Center) { Text("선택", fontSize = 12.sp) }
         columns.forEach { column ->
-            DataSheetCellV31(
-                text = column.label,
-                width = column.width * zoom,
-                zoom = zoom,
-                header = true
-            )
+            Column(Modifier.width(column.width * zoom).fillMaxHeight()) {
+                Box(Modifier.weight(1f).fillMaxWidth().clickable { onSort(column.label) }
+                    .testTag("sheet-header-${column.label}").semantics {
+                        stateDescription = if(column.label != sortColumn) "정렬 안 함" else if(ascending) "오름차순" else "내림차순"
+                    }.padding(horizontal = 7.dp * zoom), contentAlignment = Alignment.CenterStart) {
+                    Text(column.label + if(column.label == sortColumn) { if(ascending) " ↑" else " ↓" } else " ↕",
+                        fontSize = (12f * zoom).sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                TextButton(onClick = { onFilter(column.label) }, modifier = Modifier.fillMaxWidth().height(30.dp)
+                    .testTag("sheet-filter-${column.label}"), contentPadding = PaddingValues(0.dp)) {
+                    Text(if(column.label in activeFilters) "필터 ●" else "필터", fontSize = 10.sp)
+                }
+            }
+            VerticalDivider(Modifier.fillMaxHeight(), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .65f))
         }
     }
 }
@@ -255,12 +348,17 @@ private fun DataSheetHeaderV31(columns: List<DataColumnV31>, zoom: Float) {
 @Composable
 private fun DataSheetRowV31(
     index: Int,
+    rowNumber: Int,
     c: InvestigationCase,
     columns: List<DataColumnV31>,
     zoom: Float,
+    selectionMode: Boolean,
+    selected: Boolean,
+    enabled: Boolean,
     onOpen: (InvestigationCase) -> Unit
 ) {
     val background = when {
+        selectionMode && selected -> MaterialTheme.colorScheme.secondaryContainer
         normalizedStatusV31(c.status) == DATA_DONE_V31 -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .42f)
         index % 2 == 1 -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .20f)
         else -> MaterialTheme.colorScheme.surface
@@ -270,12 +368,15 @@ private fun DataSheetRowV31(
             .fillMaxWidth()
             .height(60.dp * zoom)
             .background(background)
-            .clickable { onOpen(c) },
+            .testTag("sheet-row-${c.id}")
+            .clickable(enabled = enabled) { onOpen(c) },
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if(selectionMode) Checkbox(selected, onCheckedChange = { onOpen(c) }, enabled = enabled,
+            modifier = Modifier.width(52.dp).testTag("sheet-select-${c.id}"))
         columns.forEachIndexed { columnIndex, column ->
             DataSheetCellV31(
-                text = if (columnIndex == 0) (index + 1).toString() else column.value(c),
+                text = if (columnIndex == 0) rowNumber.toString() else column.value(c),
                 width = column.width * zoom,
                 zoom = zoom,
                 header = false
@@ -285,11 +386,14 @@ private fun DataSheetRowV31(
 }
 
 @Composable
-private fun DataSheetCellV31(text: String, width: Dp, zoom: Float, header: Boolean) {
+private fun DataSheetCellV31(text: String, width: Dp, zoom: Float, header: Boolean,
+    onClick: (() -> Unit)? = null, tag: String = "", sortDescription: String = "") {
     Box(
         Modifier
             .width(width)
             .fillMaxHeight()
+            .then(if (onClick == null) Modifier else Modifier.clickable(onClick = onClick)
+                .testTag(tag).semantics { stateDescription = sortDescription })
             .padding(horizontal = 7.dp * zoom, vertical = 5.dp * zoom),
         contentAlignment = Alignment.CenterStart
     ) {
@@ -305,9 +409,9 @@ private fun DataSheetCellV31(text: String, width: Dp, zoom: Float, header: Boole
 }
 
 private fun dataSheetSearchValuesV31(c: InvestigationCase): List<String> = listOf(
-    c.year.toString(), c.managementNo, c.requestDate, c.plannedDate, c.dueDate,
+    c.managementNo, c.requestDate, c.plannedDate, c.dueDate,
     c.debtorName, c.phone, c.mobile, c.propertyType, c.propertyAddress,
-    c.ownerName, c.ownerPhone, c.ownerAddress, c.investigationType, c.loanType,
+    c.ownerName, c.ownerPhone, c.ownerAddress, c.customMapAddress, c.investigationType, c.loanType,
     c.branch, c.branchPhone, c.investigator, c.investigatorPhone, c.requester,
     c.requestNotes, c.investigationMemo, c.status
 )

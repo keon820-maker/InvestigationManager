@@ -1,6 +1,10 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- External camera capture does not need our own CAMERA permission. -->
+    <uses-permission android:name="android.permission.CAMERA" tools:node="remove" />
+    <queries>
+        <package android:name="com.sec.android.gallery3d" />
+    </queries>
     <application
         android:name=".InvestigationManagerApp"
         android:allowBackup="false"

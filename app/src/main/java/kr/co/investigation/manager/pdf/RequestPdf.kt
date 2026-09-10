@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.*
 import android.graphics.pdf.PdfDocument
 import kr.co.investigation.manager.data.InvestigationCase
+import kr.co.investigation.manager.documentMapAddress
 import java.io.File
 import java.io.FileOutputStream
 
@@ -34,8 +35,32 @@ object RequestPdf {
         text("▷ 조사의뢰자 : ${c.requester}",330f,680f,9f,true)
         text("▷ 전화번호 : ${dash(c.branchPhone)}",330f,705f,9f,true)
         text("   팩스 : ${dash(c.branchFax)}",430f,705f,9f,true)
+        val mapAddress = c.documentMapAddress()
+        val addressLines = mutableListOf<String>()
+        p.textSize = 9f
+        for (paragraph in mapAddress.lines()) {
+            var remaining = paragraph
+            while (remaining.isNotEmpty()) {
+                val count = p.breakText(remaining, true, 465f, null).coerceAtLeast(1)
+                addressLines += remaining.take(count)
+                remaining = remaining.drop(count)
+            }
+        }
+        if (addressLines.isNotEmpty()) {
+            text("지도 표시 주소(직접입력)",55f,735f,10f,true)
+            if(addressLines.size <= 3) addressLines.forEachIndexed { index, value -> text(value,55f,754f+13f*index) }
+            else text("직접 입력한 주소는 다음 페이지에 표시됩니다.",55f,754f)
+        }
         text("※ 앱에서 원본 양식에 맞춰 재생성된 문서",55f,800f,7f)
         pdf.finishPage(page)
+        if(addressLines.size > 3) addressLines.chunked(52).forEachIndexed { index, lines ->
+            val extra = pdf.startPage(PdfDocument.PageInfo.Builder(595,842,index+2).create())
+            p.textSize=12f
+            extra.canvas.drawText("지도 표시 주소(직접입력)",55f,55f,p)
+            p.textSize=9f
+            lines.forEachIndexed { lineIndex, value -> extra.canvas.drawText(value,55f,85f+13f*lineIndex,p) }
+            pdf.finishPage(extra)
+        }
         val dir=File(context.getExternalFilesDir(null),"pdf/${c.year}").apply{mkdirs()}; val f=File(dir,"${c.managementNo.ifBlank{c.id.toString()}}_조사의뢰서.pdf")
         FileOutputStream(f).use{pdf.writeTo(it)};pdf.close();return f
     }
