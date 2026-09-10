@@ -40,6 +40,8 @@ internal object OcrFieldNormalizer {
             .replace(Regex("주택구입자[금긍]"), "주택구입자금")
             .replace(Regex("경락자[금긍]"), "경락자금")
         val semantic = contextual.replace(Regex("[()（）\\[\\]]"), "")
+            // Restrict this glyph correction to the complete known product label.
+            .replace(Regex("^전세자금보증세$"), "전세자금보증서")
 
         return when {
             semantic.contains("부동산담보대출") -> "부동산 담보대출"

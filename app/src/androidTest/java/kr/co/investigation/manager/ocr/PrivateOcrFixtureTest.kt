@@ -42,6 +42,7 @@ class PrivateOcrFixtureTest {
             // App-private output only. Never put raw values in assertions, logcat or CI reports.
             val json = Gson().toJsonTree(result).asJsonObject.apply {
                 addProperty("sourceFile", file.name)
+                addProperty("validationTag", arguments.getString("validationTag", ""))
                 addProperty("sha256", MessageDigest.getInstance("SHA-256").digest(file.readBytes()).joinToString("") { "%02x".format(it) })
                 addProperty("elapsedMs", System.currentTimeMillis() - start)
             }
