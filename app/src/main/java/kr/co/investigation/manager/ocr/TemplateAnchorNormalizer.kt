@@ -38,6 +38,16 @@ object TemplateAnchorNormalizer {
     )
 
     fun realign(source: DocumentNormalizer.Result): DocumentNormalizer.Result {
+        val deskewed = DocumentSkewCorrector.correct(source)
+        var result: DocumentNormalizer.Result? = null
+        try {
+            return realignTable(deskewed).also { result = it }
+        } finally {
+            if (deskewed.bitmap !== source.bitmap && deskewed.bitmap !== result?.bitmap) deskewed.bitmap.recycle()
+        }
+    }
+
+    private fun realignTable(source: DocumentNormalizer.Result): DocumentNormalizer.Result {
         if (!OpenCVLoader.initLocal()) return source
         if (source.bitmap.width < 1100 || source.bitmap.height < 1500) return source
 
@@ -109,10 +119,22 @@ object TemplateAnchorNormalizer {
 
                 val curve = MatOfPoint2f(*contour.toArray())
                 try {
-                    val rotated = Imgproc.minAreaRect(curve)
-                    val points = Array(4) { Point() }
-                    rotated.points(points)
-                    val ordered = orderPoints(points)
+                    // A rotated rectangle removes roll but cannot remove perspective.
+                    // Keep the measured four corners of the convex table outline.
+                    val hullIndices = org.opencv.core.MatOfInt()
+                    val hull = MatOfPoint2f()
+                    val approx = MatOfPoint2f()
+                    val ordered = try {
+                        Imgproc.convexHull(contour, hullIndices)
+                        val all = contour.toArray()
+                        hull.fromArray(*hullIndices.toArray().map { all[it] }.toTypedArray())
+                        var corners: Array<Point>? = null
+                        for (epsilon in listOf(0.01, 0.02, 0.03, 0.04)) {
+                            Imgproc.approxPolyDP(hull, approx, epsilon * Imgproc.arcLength(hull, true), true)
+                            if (approx.total() == 4L) { corners = orderPoints(approx.toArray()); break }
+                        }
+                        corners ?: return@forEach
+                    } finally { hullIndices.release(); hull.release(); approx.release() }
                     val tableWidth = (distance(ordered[0], ordered[1]) + distance(ordered[3], ordered[2])) / 2.0
                     val tableHeight = (distance(ordered[0], ordered[3]) + distance(ordered[1], ordered[2])) / 2.0
                     if (tableWidth < 300.0 || tableHeight < 200.0) return@forEach

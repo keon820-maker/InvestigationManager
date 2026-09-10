@@ -26,6 +26,8 @@ object OcrService {
     private suspend fun recognizeCase(normalizedDocument: DocumentNormalizer.Result): OcrResult {
         val alignedDocument = TemplateAnchorNormalizer.realign(normalizedDocument)
         return try {
+            // Once cell ownership is verified, no later regex/anchor repair may replace its blanks.
+            GridFormOcr.recognize(alignedDocument)?.let { return it }
             val base = AdaptiveOcr.recognizeCase(alignedDocument)
 
             if (looksLikeAppScreenshot(base.rawText)) {
