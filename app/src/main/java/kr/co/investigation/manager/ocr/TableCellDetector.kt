@@ -48,20 +48,24 @@ object TableCellDetector {
                 Imgproc.MORPH_RECT,
                 Size(1.0, max(24, bitmap.height / 75).toDouble())
             )
-            Imgproc.morphologyEx(bw, horizontal, Imgproc.MORPH_OPEN, hk)
-            Imgproc.morphologyEx(bw, vertical, Imgproc.MORPH_OPEN, vk)
+            try {
+                Imgproc.morphologyEx(bw, horizontal, Imgproc.MORPH_OPEN, hk)
+                Imgproc.morphologyEx(bw, vertical, Imgproc.MORPH_OPEN, vk)
+            } finally { hk.release(); vk.release() }
             Core.add(horizontal, vertical, grid)
 
             val closeKernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
-            Imgproc.morphologyEx(grid, grid, Imgproc.MORPH_CLOSE, closeKernel)
-            Imgproc.dilate(grid, grid, closeKernel)
+            try {
+                Imgproc.morphologyEx(grid, grid, Imgproc.MORPH_CLOSE, closeKernel)
+                Imgproc.dilate(grid, grid, closeKernel)
+            } finally { closeKernel.release() }
 
             Imgproc.findContours(grid, contours, hierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE)
 
             val w = bitmap.width
             val h = bitmap.height
             val minY = (h * 0.18).toInt()
-            val maxY = (h * 0.72).toInt()
+            val maxY = (h * 0.85).toInt()
 
             val raw = contours.map { Imgproc.boundingRect(it) }
                 .map { Rect(it.x, it.y, it.x + it.width, it.y + it.height) }

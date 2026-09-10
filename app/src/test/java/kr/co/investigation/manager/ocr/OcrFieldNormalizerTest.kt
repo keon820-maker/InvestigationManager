@@ -26,6 +26,9 @@ class OcrFieldNormalizerTest {
     fun photographedLoanLabelsAreCanonicalized() {
         assertEquals("전세자금(보증서)", OcrFieldNormalizer.loanType("전세자금(보증서)"))
         assertEquals("전세자금(보증서)", OcrFieldNormalizer.loanType("전세자긍(보증서)"))
+        assertEquals("전세자금(보증서)", OcrFieldNormalizer.loanType("전세자금(보증세)"))
+        assertEquals("", OcrFieldNormalizer.loanType("보증세"))
+        assertEquals("", OcrFieldNormalizer.loanType("다른상품(보증세)"))
         assertEquals("주택구입자금대출", OcrFieldNormalizer.loanType("주택구입자긍대출"))
         assertEquals("경락자금대출", OcrFieldNormalizer.loanType("경락자금대출"))
     }

@@ -131,7 +131,7 @@ object DocumentNormalizer {
                 .maxByOrNull { anchorScore(it) }
 
             when {
-                page != null && (page.areaFraction >= 0.46 || tableAnchor == null) -> {
+                page != null && tableAnchor == null -> {
                     warp(
                         rgba,
                         page.points,

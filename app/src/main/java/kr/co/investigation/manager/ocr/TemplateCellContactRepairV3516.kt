@@ -180,17 +180,11 @@ object TemplateCellContactRepairV3516 {
         if (!TenantResultSanitizer.validTenantName(oldName)) oldName = ""
         if (!TenantResultSanitizer.validTenantPhone(oldPhone)) oldPhone = ""
 
-        val normalizedDebtorMobile = normalizePhone(debtorMobile)
-        var name = oldName.ifBlank { fresh.name }
+        val name = oldName.ifBlank { fresh.name }
         val phone = oldPhone.ifBlank { fresh.phone }
 
-        // 같은 사람이 채무자이면서 임차인인 양식은 같은 휴대폰번호 중복이 정상이다.
-        if (name.isBlank() && phone.isNotBlank() && phone == normalizedDebtorMobile) {
-            val debtor = debtorName.substringBefore('(').replace(" ", "").trim()
-            if (TenantResultSanitizer.validTenantName(debtor)) name = debtor
-        }
-
-        if (name.isBlank() && phone.isBlank()) return existingJson.ifBlank { "[]" }
+        // A matching phone is not evidence of a printed tenant name.
+        if (name.isBlank()) return existingJson.ifBlank { "[]" }
 
         val out = JSONArray()
         out.put(JSONObject().apply { put("name", name); put("phone", phone) })

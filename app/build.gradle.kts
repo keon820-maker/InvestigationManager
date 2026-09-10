@@ -27,8 +27,8 @@ android {
         applicationId = "kr.co.investigation.manager"
         minSdk = 28
         targetSdk = 35
-        versionCode = 61
-        versionName = "0.35.26"
+        versionCode = 62
+        versionName = "0.35.27"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
@@ -54,7 +54,18 @@ android {
             }
         }
     }
-    buildTypes { getByName("debug") { if (hasPermanentSigning) signingConfig = signingConfigs.getByName("permanent") } }
+    buildTypes {
+        getByName("debug") { if (hasPermanentSigning) signingConfig = signingConfigs.getByName("permanent") }
+        create("privateValidation") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".ocrvalidation"
+            versionNameSuffix = "-private-validation"
+            matchingFallbacks += "debug"
+            buildConfigField("boolean", "FIREBASE_CONFIGURED", "false")
+            buildConfigField("String", "KAKAO_NATIVE_APP_KEY", "\"\"")
+        }
+    }
+    testBuildType = if (providers.gradleProperty("privateOcrValidation").orNull == "true") "privateValidation" else "debug"
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

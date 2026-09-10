@@ -80,7 +80,6 @@ object AnchorContactRepairV3518 {
             val curPhone = ContactRoleResolverV3517.normalizePhone(c.phone)
             val fixedPhone = when {
                 curPhone.isBlank() -> ""
-                curPhone == detectedMobile -> ""
                 curPhone in excluded -> ""
                 else -> curPhone
             }
