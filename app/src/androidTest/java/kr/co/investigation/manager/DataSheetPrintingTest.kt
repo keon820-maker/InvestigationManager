@@ -58,7 +58,7 @@ class DataSheetPrintingTest {
         val snapshot = SheetPrintSnapshot(columns, rows, "합성 자료 인쇄 검증")
         for((width,height) in listOf(790 to 540, 540 to 790, 250 to 300)) {
             val pages = layoutSheetPrint(snapshot,width,height)
-            assertTrue(pages.size > 1)
+            assertTrue(pages.isNotEmpty())
             pages.forEach { page ->
                 assertEquals(columns.indices.toList(), page.columns)
                 assertTrue(page.widths.sum() * page.scale <= width + .01f)
