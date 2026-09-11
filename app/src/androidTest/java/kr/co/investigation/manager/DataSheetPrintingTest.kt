@@ -52,7 +52,7 @@ class DataSheetPrintingTest {
     @Test fun wideTablesFitAllColumnsAndLongCellsContinueWithoutLoss() {
         val columns = listOf(SheetPrintColumn("번호",58f), SheetPrintColumn("관리번호",170f)) +
             (1..12).map { SheetPrintColumn("검증열$it",310f) }
-        val longValue = "한글주소123".repeat(450)
+        val longValue = "한글주소123".repeat(1_200)
         val rows = (0..3).map { index -> listOf("${index+1}","검사-$index") +
             (1..12).map { if(index==1 && it==4) longValue else "내용 $index/$it" } }
         val snapshot = SheetPrintSnapshot(columns, rows, "합성 자료 인쇄 검증")
