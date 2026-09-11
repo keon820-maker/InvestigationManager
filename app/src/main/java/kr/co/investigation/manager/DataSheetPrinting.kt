@@ -15,11 +15,12 @@ import android.widget.Toast
 import kotlinx.coroutines.*
 import java.io.FileOutputStream
 import kotlin.math.floor
+import kotlin.math.min
 
 data class SheetPrintColumn(val title: String, val preferredWidth: Float)
 data class SheetPrintSnapshot(val columns: List<SheetPrintColumn>, val rows: List<List<String>>, val description: String)
 internal data class SheetPrintRow(val sourceIndex: Int, val cells: List<List<String>>, val height: Float)
-internal data class SheetPrintPage(val columns: List<Int>, val widths: List<Float>, val rows: List<SheetPrintRow>, val group: Int, val groupCount: Int)
+internal data class SheetPrintPage(val columns: List<Int>, val widths: List<Float>, val rows: List<SheetPrintRow>, val scale: Float)
 
 private fun sheetPrintPaint() = Paint(Paint.ANTI_ALIAS_FLAG).apply {
     color = Color.BLACK; textSize = 9f; typeface = Typeface.create("sans-serif", Typeface.NORMAL)
@@ -36,38 +37,25 @@ private fun wrappedSheetText(value: String, width: Float, paint: Paint): List<St
     }
 }
 
-/** Split wide tables into readable column groups, repeating the number/management columns. */
+/** Fit every column across one landscape sheet; continue vertically only when rows do not fit. */
 internal fun layoutSheetPrint(snapshot: SheetPrintSnapshot, width: Int, height: Int): List<SheetPrintPage> {
     require(snapshot.columns.isNotEmpty())
     require(snapshot.rows.all { it.size == snapshot.columns.size })
-    val anchors = snapshot.columns.indices.filter { snapshot.columns[it].title in setOf("번호", "관리번호") }
     require(width >= 160 && height >= 200) { "Paper content area is too small" }
-    val widths = snapshot.columns.map { (it.preferredWidth * .65f).coerceIn(42f, width * .45f) }.toMutableList()
-    val anchorWidth = anchors.sumOf { widths[it].toDouble() }.toFloat()
-    snapshot.columns.indices.filterNot { it in anchors }.forEach { index ->
-        widths[index] = minOf(widths[index], width - anchorWidth)
-    }
-    val groups = mutableListOf<List<Int>>()
-    var current = anchors.toMutableList()
-    var usedWidth = anchorWidth
-    for(index in snapshot.columns.indices.filterNot { it in anchors }) {
-        if(usedWidth + widths[index] > width && current.size > anchors.size) {
-            groups += current.toList(); current = anchors.toMutableList(); usedWidth = anchorWidth
-        }
-        current += index; usedWidth += widths[index]
-    }
-    if(current.isNotEmpty()) groups += current.toList()
+    val columns = snapshot.columns.indices.toList()
+    val widths = snapshot.columns.map { (it.preferredWidth * .65f).coerceAtLeast(42f) }
+    val scale = min(1f, width / widths.sum())
     val paint = sheetPrintPaint()
-    val capacity = (height - 120f).coerceAtLeast(60f)
+    val logicalHeight = height / scale
+    val capacity = (logicalHeight - 120f).coerceAtLeast(60f)
     val pages = mutableListOf<SheetPrintPage>()
-    groups.forEachIndexed { groupIndex, columns ->
-        var buffer = mutableListOf<SheetPrintRow>()
-        var usedHeight = 0f
-        fun flush() {
-            if(buffer.isNotEmpty()) pages += SheetPrintPage(columns, columns.map { widths[it] }, buffer.toList(), groupIndex + 1, groups.size)
-            buffer = mutableListOf(); usedHeight = 0f
-        }
-        snapshot.rows.forEachIndexed { rowIndex, row ->
+    var buffer = mutableListOf<SheetPrintRow>()
+    var usedHeight = 0f
+    fun flush() {
+        if(buffer.isNotEmpty()) pages += SheetPrintPage(columns, widths, buffer.toList(), scale)
+        buffer = mutableListOf(); usedHeight = 0f
+    }
+    snapshot.rows.forEachIndexed { rowIndex, row ->
             val lines = columns.map { wrappedSheetText(row[it], widths[it] - 8f, paint) }
             val count = lines.maxOf { it.size }
             val fullHeight = count * 11f + 8f
@@ -77,25 +65,26 @@ internal fun layoutSheetPrint(snapshot: SheetPrintSnapshot, width: Int, height: 
                 if(capacity - usedHeight < 19f) flush()
                 val take = minOf(count - offset, floor((capacity - usedHeight - 8f) / 11f).toInt().coerceAtLeast(1))
                 val cells = lines.mapIndexed { index, cell ->
-                    if(columns[index] in anchors && offset >= cell.size) cell.take(take) else cell.drop(offset).take(take)
+                    cell.drop(offset).take(take)
                 }
                 val rowHeight = take * 11f + 8f
                 buffer += SheetPrintRow(rowIndex, cells, rowHeight)
                 usedHeight += rowHeight; offset += take
                 if(offset < count) flush()
             }
-        }
-        flush()
     }
+    flush()
     return pages
 }
 
 internal fun drawSheetPrintPage(canvas: Canvas, snapshot: SheetPrintSnapshot, page: SheetPrintPage, pageNumber: Int) {
+    canvas.save()
+    canvas.scale(page.scale, page.scale)
     val paint = sheetPrintPaint()
     paint.textSize = 13f
     canvas.drawText("조사 데이터시트", 0f, 17f, paint)
     paint.textSize = 8f
-    canvas.drawText("현재 조건 ${snapshot.rows.size}건 · 열 묶음 ${page.group}/${page.groupCount} · ${pageNumber}페이지", 0f, 32f, paint)
+    canvas.drawText("현재 조건 ${snapshot.rows.size}건 · 전체 열 · ${pageNumber}페이지", 0f, 32f, paint)
     val totalWidth = page.widths.sum()
     wrappedSheetText(snapshot.description, totalWidth, paint).take(2).forEachIndexed { i, text -> canvas.drawText(text, 0f, 44f + 10f*i, paint) }
     var x = 0f
@@ -120,6 +109,7 @@ internal fun drawSheetPrintPage(canvas: Canvas, snapshot: SheetPrintSnapshot, pa
         }
         y += row.height
     }
+    canvas.restore()
 }
 
 internal fun printDataSheet(context: Context, snapshot: SheetPrintSnapshot) {

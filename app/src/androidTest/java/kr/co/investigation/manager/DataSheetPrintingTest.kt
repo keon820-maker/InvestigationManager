@@ -49,7 +49,7 @@ class DataSheetPrintingTest {
         } finally { file.delete() }
     }
 
-    @Test fun wideTablesRepeatIdentifiersAndLongCellsContinueWithoutLoss() {
+    @Test fun wideTablesFitAllColumnsAndLongCellsContinueWithoutLoss() {
         val columns = listOf(SheetPrintColumn("번호",58f), SheetPrintColumn("관리번호",170f)) +
             (1..12).map { SheetPrintColumn("검증열$it",310f) }
         val longValue = "한글주소123".repeat(450)
@@ -60,9 +60,9 @@ class DataSheetPrintingTest {
             val pages = layoutSheetPrint(snapshot,width,height)
             assertTrue(pages.size > 1)
             pages.forEach { page ->
-                assertTrue(page.widths.sum() <= width + .01f)
-                assertTrue(page.rows.sumOf { it.height.toDouble() } <= height - 120f + .01f)
-                assertTrue(page.columns.containsAll(listOf(0,1)))
+                assertEquals(columns.indices.toList(), page.columns)
+                assertTrue(page.widths.sum() * page.scale <= width + .01f)
+                assertTrue(page.rows.sumOf { it.height.toDouble() } <= height / page.scale - 120f + .01f)
             }
             for(column in 2 until columns.size) {
                 for(row in rows.indices) {
@@ -73,5 +73,14 @@ class DataSheetPrintingTest {
                 }
             }
         }
+    }
+
+    @Test fun ordinaryFilteredRowsUseOneLandscapePageWithEveryColumn() {
+        val columns = listOf(SheetPrintColumn("번호",58f),SheetPrintColumn("관리번호",170f)) +
+            (1..22).map { SheetPrintColumn("열$it",if(it % 4 == 0) 280f else 120f) }
+        val rows = (1..4).map { row -> columns.mapIndexed { column, _ -> "자료$row-$column" } }
+        val pages = layoutSheetPrint(SheetPrintSnapshot(columns,rows,"현재 필터"),1090,720)
+        assertEquals(1,pages.size)
+        assertEquals(columns.indices.toList(),pages.single().columns)
     }
 }
