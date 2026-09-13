@@ -11,7 +11,10 @@ object OcrService {
         val rawText: String,
         val parsed: InvestigationCase,
         val normalized: Boolean,
-        val preprocessMessage: String
+        val preprocessMessage: String,
+        // Repair logs include repeated labels and field values. Never feed those logs
+        // back into extraction; copies retain the actual document text independently.
+        val sourceText: String = rawText
     )
 
     suspend fun recognizeCase(context: Context, uri: Uri): OcrResult {
@@ -26,14 +29,14 @@ object OcrService {
     private suspend fun recognizeCase(normalizedDocument: DocumentNormalizer.Result): OcrResult {
         // A complete verified grid needs no second warp/Hough pass. This also avoids
         // resampling legible text after the central table has already been aligned.
-        GridFormOcr.recognize(normalizedDocument)?.let { return it }
+        GridFormOcr.recognize(normalizedDocument)?.let { return finish(it) }
         val alignedDocument = TemplateAnchorNormalizer.realign(normalizedDocument)
         return try {
             // Once cell ownership is verified, no later regex/anchor repair may replace its blanks.
-            GridFormOcr.recognize(alignedDocument)?.let { return it }
+            GridFormOcr.recognize(alignedDocument)?.let { return finish(it) }
             val base = AdaptiveOcr.recognizeCase(alignedDocument)
 
-            if (looksLikeAppScreenshot(base.rawText)) {
+            if (looksLikeAppScreenshot(base.sourceText)) {
                 return OcrResult(
                     rawText = buildString {
                         append("--- 선택 이미지 오류 v0.16 ---\n")
@@ -43,7 +46,8 @@ object OcrService {
                     },
                     parsed = InvestigationCase(year = LocalDate.now().year),
                     normalized = false,
-                    preprocessMessage = "선택 오류: 앱 화면 캡처가 선택되었습니다. 실제 조사의뢰서 원본 사진을 다시 선택하세요."
+                    preprocessMessage = "선택 오류: 앱 화면 캡처가 선택되었습니다. 실제 조사의뢰서 원본 사진을 다시 선택하세요.",
+                    sourceText = ""
                 )
             }
 
@@ -72,7 +76,7 @@ object OcrService {
             val anchorMappedContacts = AnchorContactRepairV3518.repair(alignedDocument, roleMappedContacts)
 
             val finalTenants = TenantResultSanitizer.repair(anchorMappedContacts)
-            excludeInvestigator(finalTenants)
+            finish(finalTenants)
         } finally {
             if (alignedDocument.bitmap !== normalizedDocument.bitmap && !alignedDocument.bitmap.isRecycled) {
                 alignedDocument.bitmap.recycle()
@@ -88,14 +92,21 @@ object OcrService {
             "OCR 원문 숨기기",
             "OCR 원문(진단용)",
             "자동인식 결과",
-            "물건소재지 (지도 기준)"
+            "물건소재지 (지도 기준)",
+            "고정 조사담당자",
+            "인식 진단 보기",
+            "갤러리에서 선택",
+            "카메라 촬영",
+            "변경 저장"
         )
         return markers.count { text.contains(it, ignoreCase = true) } >= 2
     }
 
-    suspend fun recognize(context: Context, uri: Uri): String = recognizeCase(context, uri).rawText
+    suspend fun recognize(context: Context, uri: Uri): String = recognizeCase(context, uri).sourceText
 
     fun parse(text: String): InvestigationCase = FixedTemplateOcr.parseFallback(text)
+
+    internal fun finish(result: OcrResult): OcrResult = excludeInvestigator(NotesTypoRepairV29.repair(result))
 
     private fun excludeInvestigator(result: OcrResult): OcrResult = result.copy(
         parsed = result.parsed.copy(
@@ -104,6 +115,8 @@ object OcrService {
             investigatorFax = ""
         ),
         rawText = OcrFieldNormalizer.redactInvestigatorSection(result.rawText),
-        preprocessMessage = result.preprocessMessage + " / 조사담당자 OCR 제외"
+        sourceText = OcrFieldNormalizer.redactInvestigatorSection(result.sourceText),
+        preprocessMessage = if (result.preprocessMessage.contains("조사담당자 OCR 제외")) result.preprocessMessage
+            else result.preprocessMessage + " / 조사담당자 OCR 제외"
     )
 }

@@ -18,6 +18,8 @@ class OcrRegistrationDraft {
     val cameraFile = mutableStateOf<File?>(null)
     val cameraSource = mutableStateOf(false)
     val preprocess = mutableStateOf("")
+    // User-facing status is separate from internal pipeline diagnostics and editable fields.
+    val statusMessage = mutableStateOf("")
     var job: Job? = null
     var generation = 0
 
@@ -35,5 +37,6 @@ class OcrRegistrationDraft {
         cameraFile.value = null
         cameraSource.value = false
         preprocess.value = ""
+        statusMessage.value = ""
     }
 }

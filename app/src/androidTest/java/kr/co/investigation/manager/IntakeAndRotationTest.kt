@@ -326,4 +326,106 @@ class IntakeAndRotationTest {
             shell("wm density reset")
         }
     }
+
+    @Test fun editPlannedDatePersistsAfterRotationAndCanBeCleared() {
+        val originalDate = LocalDate.now().withDayOfMonth(10)
+        val changedDate = originalDate.withDayOfMonth(15).toString()
+        runBlocking {
+            val dao = AppDb.get(context).cases()
+            dao.update(dao.get(smallId)!!.copy(plannedDate=originalDate.toString(),routeOrder=7))
+        }
+        openMenu("전체 데이터시트")
+        ui.onNodeWithTag("sheet-row-$smallId").performClick()
+        ui.onNodeWithTag("planned-date-open").performScrollTo().performClick()
+        ui.onAllNodesWithText("15", substring=false).onLast().performClick()
+        ui.onNodeWithTag("planned-date-confirm").performClick()
+        // Editing remains a draft until Save, and survives a configuration change.
+        assertEquals(originalDate.toString(),runBlocking { AppDb.get(context).cases().get(smallId)!!.plannedDate })
+        rotate("detail")
+        ui.onNodeWithTag("detail-save").performClick()
+        ui.waitUntil(10_000) { runBlocking { AppDb.get(context).cases().get(smallId)!!.plannedDate == changedDate } }
+        assertEquals(0,runBlocking { AppDb.get(context).cases().get(smallId)!!.routeOrder })
+        back()
+        ui.onNodeWithTag("sheet-row-$smallId").performClick()
+        ui.onNodeWithTag("planned-date-open").performScrollTo().performClick()
+        ui.onNodeWithTag("planned-date-clear").performClick()
+        ui.onNodeWithTag("detail-save").performClick()
+        ui.waitUntil(10_000) { runBlocking { AppDb.get(context).cases().get(smallId)!!.plannedDate.isBlank() } }
+    }
+
+    @Test fun patchHistoryAndOcrDiagnosticsNeverPopulateRegistrationFields() {
+        openMenu("패치내역")
+        back()
+        ui.onNodeWithTag("new-registration").performClick()
+        val diagnostics = "고정양식 검증 / 기타요청사항 보정 v0.00 / 인식 품질 16/16"
+        ui.runOnUiThread {
+            val draft = ViewModelProvider(ui.activity)[AppViewModel::class.java].ocrDraft
+            assertEquals("",draft.parsed.value.requestNotes)
+            assertEquals("",draft.parsed.value.managementNo)
+            draft.parsed.value = draft.parsed.value.copy(managementNo="진단분리-검사",requestNotes="방문 전 연락")
+            draft.preprocess.value = diagnostics
+            draft.statusMessage.value = "인식 완료. 입력 내용을 확인해주세요."
+        }
+        ui.onNodeWithTag("ocr-status").assertTextEquals("인식 완료. 입력 내용을 확인해주세요.")
+        ui.onNodeWithText(diagnostics).assertDoesNotExist()
+        ui.onNodeWithTag("ocr-diagnostics-toggle").performScrollTo().performClick()
+        ui.onNodeWithText(diagnostics).assertExists()
+        ui.onNodeWithTag("ocr-diagnostics-toggle").performScrollTo().performClick()
+        rotate("ocr")
+        ui.onNodeWithText(diagnostics).assertDoesNotExist()
+        ui.runOnUiThread {
+            val draft = ViewModelProvider(ui.activity)[AppViewModel::class.java].ocrDraft
+            assertEquals("진단분리-검사",draft.parsed.value.managementNo)
+            assertEquals("방문 전 연락",draft.parsed.value.requestNotes)
+        }
+    }
+
+    @Test fun scheduleNumberAndRegistrationSortSurviveRotation() {
+        fun choose(option: String) {
+            ui.onNodeWithTag("schedule-sort").performClick()
+            ui.onNodeWithTag("schedule-sort-$option").performClick()
+        }
+        fun assertOrder(first: Long, second: Long) {
+            val list = ui.onNodeWithTag("schedule-list")
+            list.performScrollToNode(hasTestTag("schedule-case-$first"))
+            val a = ui.onNodeWithTag("schedule-case-$first").fetchSemanticsNode().boundsInRoot.top
+            val b = ui.onNodeWithTag("schedule-case-$second").fetchSemanticsNode().boundsInRoot.top
+            assertTrue("Selected sort must order schedule cards",a < b)
+        }
+        runBlocking {
+            val dao=AppDb.get(context).cases()
+            dao.update(dao.get(smallId)!!.copy(createdAt=3000L))
+            dao.update(dao.get(largeId)!!.copy(createdAt=1000L))
+        }
+        ui.onNode(hasSetTextAction()).performTextInput("검사")
+        closeSoftKeyboard()
+        choose("NUMBER_ASC")
+        assertOrder(smallId,largeId)
+        choose("NUMBER_DESC")
+        assertOrder(largeId,smallId)
+        choose("REGISTERED_ASC")
+        assertOrder(largeId,smallId)
+        rotate("main")
+        assertOrder(largeId,smallId)
+        choose("REGISTERED_DESC")
+        assertOrder(smallId,largeId)
+    }
+
+    @Test fun existingDuplicatedNotesChangeOnlyAfterCleanupAndSave() {
+        val original="검증 담당자와 통화 후 방문\n기타요청사항\n검증 담당자와 통화 후 방문\n추가 사진 확인"
+        val cleaned="검증 담당자와 통화 후 방문\n추가 사진 확인"
+        runBlocking {
+            val dao=AppDb.get(context).cases()
+            dao.update(dao.get(smallId)!!.copy(requestNotes=original))
+        }
+        openMenu("전체 데이터시트")
+        ui.onNodeWithTag("sheet-row-$smallId").performClick()
+        ui.onNodeWithTag("notes-clean-duplicates").performScrollTo().performClick()
+        assertEquals(original,runBlocking { AppDb.get(context).cases().get(smallId)!!.requestNotes })
+        ui.runOnUiThread {
+            assertEquals(cleaned,ViewModelProvider(ui.activity)[AppViewModel::class.java].detailDraft.value.requestNotes)
+        }
+        ui.onNodeWithTag("detail-save").performClick()
+        ui.waitUntil(10_000) { runBlocking { AppDb.get(context).cases().get(smallId)!!.requestNotes == cleaned } }
+    }
 }

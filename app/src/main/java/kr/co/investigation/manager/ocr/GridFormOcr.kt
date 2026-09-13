@@ -136,6 +136,7 @@ internal object GridFormOcr {
                 "ownerAddress" to ownerAddress, "branch" to parsed.branch)
             required.filterValues(String::isBlank).keys.forEach(review::add)
             return OcrService.OcrResult(
+                sourceText = (listOf(header) + raw.filterKeys { !it.endsWith(".retry") }.values + footer).joinToString("\n"),
                 rawText = buildString {
                     append("--- 실제 표 경계 OCR ---\n조사담당자 : [OCR 제외]\n")
                     raw.forEach { (key, text) -> append(key).append(" : ").append(text).append('\n') }

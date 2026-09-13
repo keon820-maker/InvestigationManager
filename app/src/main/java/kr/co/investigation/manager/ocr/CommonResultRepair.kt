@@ -3,7 +3,7 @@ package kr.co.investigation.manager.ocr
 /** OCR 최종 결과의 반복적인 구조 오류를 보정한다. */
 object CommonResultRepair {
     fun repair(base: OcrService.OcrResult): OcrService.OcrResult {
-        val raw = base.rawText
+        val raw = base.sourceText
         val c = base.parsed
 
         val requesterFromRaw = extractRequester(raw)
