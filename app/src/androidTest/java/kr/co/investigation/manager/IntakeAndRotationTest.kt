@@ -337,9 +337,10 @@ class IntakeAndRotationTest {
         openMenu("전체 데이터시트")
         ui.onNodeWithTag("sheet-row-$smallId").performClick()
         ui.onNodeWithTag("planned-date-open").performScrollTo().performClick()
-        // Material DatePicker exposes days through accessibility descriptions,
-        // replacing the child Text semantics with a full localized date.
-        ui.onAllNodes(hasContentDescription("15", substring=true) and hasClickAction()).onLast().performClick()
+        ui.onNodeWithTag("planned-date-confirm").assertIsDisplayed()
+        // Material DatePicker sets SemanticsProperties.Text to the full localized
+        // date and clears the child day number; it does not use contentDescription.
+        ui.onAllNodes(hasText("15", substring=true) and hasClickAction()).onLast().performClick()
         ui.onNodeWithTag("planned-date-confirm").performClick()
         // Editing remains a draft until Save, and survives a configuration change.
         assertEquals(originalDate.toString(),runBlocking { AppDb.get(context).cases().get(smallId)!!.plannedDate })
