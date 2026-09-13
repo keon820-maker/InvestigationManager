@@ -53,6 +53,30 @@ class NotesSanitizerV3531Test {
     }
 
     @Test
+    fun differentRegisterAndRegisterDateRequestsSurviveARepeatedHeading() {
+        val value = "등기부 확인 요청\n기타요청사항\n등기일 확인 요청"
+        val expected = "등기부 확인 요청\n등기일 확인 요청"
+        assertEquals(expected, NotesTypoRepairV29.clean(value))
+        assertEquals(expected, NotesTypoRepairV29.cleanRepeatedSections(value))
+    }
+
+    @Test
+    fun differentEntranceAndDoorRequestsSurviveARepeatedHeading() {
+        val value = "현장 출입문 확인\n기타요청사항\n현장 출입구 확인"
+        val expected = "현장 출입문 확인\n현장 출입구 확인"
+        assertEquals(expected, NotesTypoRepairV29.clean(value))
+        assertEquals(expected, NotesTypoRepairV29.cleanRepeatedSections(value))
+    }
+
+    @Test
+    fun unknownSimilarReadingIsRetainedInsteadOfGuessingItsMeaning() {
+        val value = "계약서 내용을 확인해 주세요.\n기타요청사항\n계약시 내용을 확인해 주세요."
+        val expected = "계약서 내용을 확인해 주세요.\n계약시 내용을 확인해 주세요."
+        assertEquals(expected, NotesTypoRepairV29.cleanRepeatedSections(value))
+        assertEquals(expected, NotesTypoRepairV29.cleanRepeatedSections(expected))
+    }
+
+    @Test
     fun mentioningNotesInASentenceDoesNotSplitTheSentence() {
         val value = "기타요청사항은 담당자에게 확인하세요."
         assertEquals(value, NotesTypoRepairV29.clean(value))

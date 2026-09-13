@@ -63,8 +63,8 @@ object NotesTypoRepairV29 {
         fun addLine(line: String) {
             if (line.isBlank()) return
             if (cleaned.any { canonicalLine(it) == canonicalLine(line) }) return
-            // A second OCR pass can change a few glyphs, but similar instructions
-            // within one unlabelled section must not be merged speculatively.
+            // Only known OCR-confusion spellings may share an identity. A generic
+            // edit-distance match can delete distinct requests such as 등기부/등기일.
             if (repeatedSection && cleaned.any { isRepeatedReading(it, line) }) return
             cleaned += line
         }
@@ -116,23 +116,17 @@ object NotesTypoRepairV29 {
     }
 
     private fun isRepeatedReading(first: String, repeated: String): Boolean {
-        val a = canonicalLine(first)
-        val b = canonicalLine(repeated)
-        if (a.length < 4 || b.length < 4) return false
-        // Keep differing amounts, dates, times, contract periods, etc. Even one
-        // changed digit may be a genuine second instruction, not an OCR typo.
-        fun numbers(value: String) = Regex("\\d+(?:[.,:/-]\\d+)*").findAll(value)
-            .map { it.value.replace(",", "") }.toList()
-        if (numbers(a) != numbers(b)) return false
-        val meaning = Regex("(?:방문|연락|실행|이사|입주|전입)(?:전|후)|금지|불가능|불가|가능|하지마|하지않|미실시|제외|추가|임차인|소유자|채무자|임대인|오전|오후|당일|익일|취소|보류|불필요|필요|내부|외부|실내|실외|포함|일부|전부|해지|변경|수리|반환|보관|승인|거절")
-        fun signals(value: String) = meaning.findAll(value).map { it.value }.toList()
-        if (signals(a) != signals(b)) return false
-        val recipients = Regex("[가-힣]{2,8}(?:에게|께)")
-        if (recipients.findAll(a).map { it.value }.toList() != recipients.findAll(b).map { it.value }.toList()) return false
-        val units = Regex("\\d[\\d.,]*(?:조|억|천만|백만|십만|만|천|백)?(?:원|달러|엔|USD|KRW|%|년|개월|월|일|시|분)")
-        if (units.findAll(a).map { it.value }.toList() != units.findAll(b).map { it.value }.toList()) return false
-        val permittedChanges = (maxOf(a.length, b.length) * 0.24).toInt().coerceIn(1, 6)
-        return editDistance(a, b) <= permittedChanges
+        // Normalization is comparison-only: keep the first text verbatim. No
+        // numeric substitutions or general similarity threshold are permitted.
+        fun readingKey(value: String): String = canonicalLine(value)
+            .replace(Regex("(?:때|[Cc])출(?=실행|완료)"), "대출")
+            .replace("임미차확인", "임대차확인")
+            .replace("임다츠현장조사", "임대차현장조사")
+            .replace("입주사실흑인", "입주사실확인")
+            .replace("계약흑인요청", "계약확인요청")
+            .replace("본인기주", "본인거주")
+            .replace("부탁드립니드", "부탁드립니다")
+        return readingKey(first) == readingKey(repeated)
     }
 
     private fun looksLikeRepeatedNotesMarker(line: String): Boolean {
