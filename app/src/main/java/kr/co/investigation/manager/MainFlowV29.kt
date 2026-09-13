@@ -218,6 +218,8 @@ private fun MainScreenV29(
     var mobileTab by rememberSaveable { mutableIntStateOf(0) }
     var showCompleted by rememberSaveable { mutableStateOf(false) }
     var quickFilter by rememberSaveable { mutableStateOf(FILTER_ALL_V29) }
+    var scheduleSortName by rememberUiState { mutableStateOf(ScheduleSort.ROUTE.name) }
+    val scheduleSort = ScheduleSort.entries.firstOrNull { it.name == scheduleSortName } ?: ScheduleSort.ROUTE
     var moreMenu by remember { mutableStateOf(false) }
     var routeDate by remember { mutableStateOf<String?>(null) }
     var navCase by remember { mutableStateOf<InvestigationCase?>(null) }
@@ -310,7 +312,7 @@ private fun MainScreenV29(
                             DropdownMenuItem(text = { Text("캘린더") }, onClick = { moreMenu = false; onCalendar() })
                             DropdownMenuItem(text = { Text("전체 데이터시트") }, onClick = { moreMenu = false; onDataSheet() })
                             DropdownMenuItem(text = { Text("사용방법") }, onClick = { moreMenu = false; onGuide() })
-                            DropdownMenuItem(text = { Text("패치내역") }, onClick = { moreMenu = false; onPatchHistory() })
+                            DropdownMenuItem(text = { Text("패치내역") }, onClick = { moreMenu = false; onPatchHistory() }, modifier = Modifier.testTag("main-patch-history"))
                             DropdownMenuItem(text = { Text("데이터·동기화") }, onClick = { moreMenu = false; onSettings() })
                         }
                     }
@@ -356,6 +358,8 @@ private fun MainScreenV29(
                     onQuery = { query = it },
                     quickFilter = quickFilter,
                     onQuickFilter = { quickFilter = it },
+                    sort = scheduleSort,
+                    onSort = { scheduleSortName = it.name },
                     counts = SummaryCountsV29(todayCount, progressCount, delayedCount, unassignedCount, newCount, completedCount),
                     showCompleted = showCompleted,
                     onToggleCompleted = { showCompleted = !showCompleted },
@@ -417,6 +421,8 @@ private fun SchedulePaneV29(
     onQuery: (String) -> Unit,
     quickFilter: String,
     onQuickFilter: (String) -> Unit,
+    sort: ScheduleSort,
+    onSort: (ScheduleSort) -> Unit,
     counts: SummaryCountsV29,
     showCompleted: Boolean,
     onToggleCompleted: () -> Unit,
@@ -433,6 +439,7 @@ private fun SchedulePaneV29(
     var menuCaseId by remember { mutableStateOf<Long?>(null) }
     var scheduleCase by remember { mutableStateOf<InvestigationCase?>(null) }
     var statusCase by remember { mutableStateOf<InvestigationCase?>(null) }
+    var sortMenu by remember { mutableStateOf(false) }
     val today = LocalDate.now()
 
     scheduleCase?.let { c ->
@@ -448,15 +455,8 @@ private fun SchedulePaneV29(
         }
     }
 
-    val grouped = remember(items) {
-        items.sortedWith(
-            compareBy<InvestigationCase> { it.plannedDate.isBlank() }
-                .thenBy { it.plannedDate }
-                .thenBy { if (it.routeOrder > 0) it.routeOrder else Int.MAX_VALUE }
-                .thenBy { statusOrderV29(it.status) }
-                .thenBy { it.dueDate }
-                .thenByDescending { it.id }
-        ).groupBy { it.plannedDate.ifBlank { NO_DATE_V29 } }
+    val grouped = remember(items, sort) {
+        sortScheduleRows(items, sort).groupBy { it.plannedDate.ifBlank { NO_DATE_V29 } }
     }
 
     Column(modifier.fillMaxSize()) {
@@ -474,9 +474,23 @@ private fun SchedulePaneV29(
                 modifier = Modifier.fillMaxWidth()
             )
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("날짜별 동선 · 지도는 진행중만 표시", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                Box(Modifier.weight(1f)) {
+                    TextButton(onClick = { sortMenu = true }, modifier = Modifier.testTag("schedule-sort")) {
+                        Text("정렬: ${sort.compactLabel}")
+                    }
+                    DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+                        ScheduleSort.entries.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text((if (option == sort) "✓ " else "") + option.label) },
+                                onClick = { onSort(option); sortMenu = false },
+                                modifier = Modifier.testTag("schedule-sort-${option.name}")
+                            )
+                        }
+                    }
+                }
                 FilterChip(selected = showCompleted, onClick = onToggleCompleted, label = { Text(if (showCompleted) "완료 숨기기" else "완료 ${counts.done}") })
             }
+            Text("같은 예정일 안에서 정렬 · 지도는 진행중만 표시", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         HorizontalDivider()
 
@@ -484,7 +498,7 @@ private fun SchedulePaneV29(
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("표시할 일정이 없습니다.") }
         } else {
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().testTag("schedule-list"),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -595,7 +609,7 @@ private fun CaseCardV29(
     val hasPhone = phoneTargetsV29(c).isNotEmpty()
     val warnings = caseWarningsV29(c, today)
 
-    ElevatedCard(Modifier.fillMaxWidth().clickable(onClick = onOpen), shape = RoundedCornerShape(18.dp)) {
+    ElevatedCard(Modifier.fillMaxWidth().testTag("schedule-case-${c.id}").clickable(onClick = onOpen), shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 if (c.routeOrder > 0 && c.plannedDate.isNotBlank()) {
@@ -973,6 +987,8 @@ private fun OcrRegisterScreenV29(vm: AppViewModel, onDone: () -> Unit, onCancel:
     var cameraFile by draft.cameraFile
     var cameraSource by draft.cameraSource
     var preprocess by draft.preprocess
+    var statusMessage by draft.statusMessage
+    var showDiagnostics by rememberUiState { mutableStateOf(false) }
     var duplicates by remember { mutableStateOf<List<InvestigationCase>?>(null) }
     var chooseDefaultAddress by rememberUiState { mutableStateOf(false) }
 
@@ -1018,7 +1034,9 @@ private fun OcrRegisterScreenV29(vm: AppViewModel, onDone: () -> Unit, onCancel:
         busy = true
         raw = ""
         showRaw = false
-        preprocess = "문서 분석 중..."
+        showDiagnostics = false
+        preprocess = ""
+        statusMessage = "문서 분석 중…"
         draft.job = scope.launch {
             runCatching { OcrService.recognizeCase(ctx, uri) }
                 .onSuccess { result ->
@@ -1026,11 +1044,19 @@ private fun OcrRegisterScreenV29(vm: AppViewModel, onDone: () -> Unit, onCancel:
                         raw = result.rawText
                         parsed = profile.applyTo(result.parsed).copy(status = result.parsed.status.normalizedStatusV29())
                         preprocess = result.preprocessMessage
+                        statusMessage = if (result.preprocessMessage.startsWith("선택 오류:")) {
+                            result.preprocessMessage.substringBefore(" / ")
+                        } else {
+                            "인식 완료. 입력 내용을 확인해주세요."
+                        }
                     }
                 }
                 .onFailure {
                     if (it is CancellationException) throw it
-                    if (generation == draft.generation) preprocess = "OCR 실패: ${it.message.orEmpty()}"
+                    if (generation == draft.generation) {
+                        statusMessage = "문서를 읽지 못했습니다. 사진을 다시 선택해주세요."
+                        preprocess = "OCR 실패: ${it.message.orEmpty()}"
+                    }
                 }
             if (generation == draft.generation) busy = false
         }
@@ -1078,7 +1104,7 @@ private fun OcrRegisterScreenV29(vm: AppViewModel, onDone: () -> Unit, onCancel:
 
     val photos = rememberDocumentPhotoActions(LocalDate.now().year,
         onPhoto = { uri, file -> acceptOcr(uri, fromCamera = file != null, file = file) },
-        onError = { preprocess = it })
+        onError = { statusMessage = it; preprocess = ""; showDiagnostics = false })
     val warnings = remember(parsed) { ocrWarningsV29(parsed) }
 
     Scaffold(topBar = { TopAppBar(title = { Text("조사의뢰서 등록") }, navigationIcon = { TextButton(enabled = !saving, onClick = { cameraFile?.delete(); onCancel() }) { Text("뒤로") } }) }) { pad ->
@@ -1103,7 +1129,8 @@ private fun OcrRegisterScreenV29(vm: AppViewModel, onDone: () -> Unit, onCancel:
                     if (busy || saving) { Spacer(Modifier.height(8.dp)); LinearProgressIndicator(Modifier.fillMaxWidth()) }
                 }
             }
-            if (preprocess.isNotBlank()) Text(preprocess, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = 8.dp))
+            if (statusMessage.isNotBlank()) Text(statusMessage, style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(vertical = 8.dp).testTag("ocr-status"))
             if (warnings.isNotEmpty() && source != null && !busy) {
                 Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(11.dp)) {
@@ -1133,6 +1160,16 @@ private fun OcrRegisterScreenV29(vm: AppViewModel, onDone: () -> Unit, onCancel:
             if (showRaw && raw.isNotBlank()) {
                 HorizontalDivider(Modifier.padding(top = 10.dp))
                 Text(raw, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
+            }
+            if (preprocess.isNotBlank() && !busy) {
+                TextButton(onClick = { showDiagnostics = !showDiagnostics },
+                    modifier = Modifier.fillMaxWidth().testTag("ocr-diagnostics-toggle")) {
+                    Text(if (showDiagnostics) "인식 진단 숨기기" else "인식 진단 보기")
+                }
+                if (showDiagnostics) {
+                    Text(preprocess, style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 8.dp).testTag("ocr-diagnostics"))
+                }
             }
         }
     }
@@ -1169,8 +1206,8 @@ private fun StatusDialogV29(current: String, onDismiss: () -> Unit, onSelect: (S
 }
 
 @Composable
-private fun PlannedDateFieldV29(value: String, onChange: (String) -> Unit) {
-    var show by remember { mutableStateOf(false) }
+internal fun PlannedDateFieldV29(value: String, modifier: Modifier = Modifier, onChange: (String) -> Unit) {
+    var show by rememberUiState { mutableStateOf(false) }
     if (show) PlannedDateDialogV29(value, { show = false }) { show = false; onChange(it) }
     OutlinedTextField(
         value = value.takeIf { it.isNotBlank() }?.let(::displayDateV29).orEmpty(),
@@ -1178,8 +1215,8 @@ private fun PlannedDateFieldV29(value: String, onChange: (String) -> Unit) {
         readOnly = true,
         label = { Text("조사 예정일") },
         placeholder = { Text("미지정") },
-        trailingIcon = { TextButton(onClick = { show = true }) { Text("선택") } },
-        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
+        trailingIcon = { TextButton(onClick = { show = true }, modifier = Modifier.testTag("planned-date-open")) { Text("선택") } },
+        modifier = modifier.fillMaxWidth().padding(vertical = 3.dp).testTag("planned-date-field")
     )
 }
 
@@ -1189,14 +1226,14 @@ private fun PlannedDateDialogV29(initial: String, onDismiss: () -> Unit, onSave:
     DatePickerDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
-            TextButton(enabled = state.selectedDateMillis != null, onClick = {
+            TextButton(enabled = state.selectedDateMillis != null, modifier = Modifier.testTag("planned-date-confirm"), onClick = {
                 val millis = state.selectedDateMillis ?: return@TextButton
                 onSave(Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate().toString())
             }) { Text("확인") }
         },
         dismissButton = {
             Row {
-                if (initial.isNotBlank()) TextButton(onClick = { onSave("") }) { Text("미지정") }
+                if (initial.isNotBlank()) TextButton(onClick = { onSave("") }, modifier = Modifier.testTag("planned-date-clear")) { Text("미지정") }
                 TextButton(onClick = onDismiss) { Text("취소") }
             }
         }

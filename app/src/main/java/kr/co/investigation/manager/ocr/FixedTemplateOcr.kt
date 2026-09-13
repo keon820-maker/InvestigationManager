@@ -133,6 +133,7 @@ object FixedTemplateOcr {
 
             return OcrService.OcrResult(
                 rawText = diagnostic,
+                sourceText = oriented.fullText.text,
                 parsed = template,
                 normalized = true,
                 preprocessMessage = "${normalized.message} / 실제양식 셀 OCR / $rotationText / 인식 품질 $score/16"

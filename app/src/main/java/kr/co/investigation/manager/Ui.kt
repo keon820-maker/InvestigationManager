@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 import kr.co.investigation.manager.archive.ArchiveService
 import kr.co.investigation.manager.data.*
 import kr.co.investigation.manager.ocr.OcrService
+import kr.co.investigation.manager.ocr.NotesTypoRepairV29
 import kr.co.investigation.manager.pdf.RequestPdf
 import kr.co.investigation.manager.storage.OriginalFileStore
 import java.io.File
@@ -258,6 +259,11 @@ import java.util.Locale
     f("소유자 연락처",c.ownerPhone){c.copy(ownerPhone=it)}
     f("소유자 주소",c.ownerAddress){c.copy(ownerAddress=it)}
     f("기타요청사항",c.requestNotes){c.copy(requestNotes=it)}
+    val cleanedNotes=remember(c.requestNotes){NotesTypoRepairV29.cleanRepeatedSections(c.requestNotes)}
+    if(cleanedNotes!=c.requestNotes) TextButton(
+        onClick={on(c.copy(requestNotes=cleanedNotes))},
+        modifier=Modifier.testTag("notes-clean-duplicates")
+    ){Text("중복 문구 정리")}
     f("영업점",c.branch){c.copy(branch=it)}
     f("영업점 전화",c.branchPhone){c.copy(branchPhone=it)}
     f("영업점 Fax",c.branchFax){c.copy(branchFax=it)}
@@ -424,6 +430,10 @@ import java.util.Locale
         }
     ){pad->
         Column(Modifier.padding(pad).consumeWindowInsets(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)){
+            PlannedDateFieldV29(c.plannedDate) { date ->
+                c=c.copy(plannedDate=date,routeOrder=if(date==c.plannedDate) c.routeOrder else 0)
+                vm.clearDetailSaveFeedback(c.id)
+            }
             OutlinedCard(Modifier.fillMaxWidth().padding(bottom=12.dp)) {
                 Column(Modifier.padding(12.dp)) {
                     Row(verticalAlignment=Alignment.CenterVertically) {

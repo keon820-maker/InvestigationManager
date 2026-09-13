@@ -24,9 +24,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.exifinterface.media.ExifInterface
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kr.co.investigation.manager.data.Attachment
+import kr.co.investigation.manager.ocr.DocumentOrientation
 import java.io.File
 import kotlin.math.max
 
@@ -39,9 +43,14 @@ fun AttachmentViewerScreen(att: Attachment, onBack: () -> Unit) {
     var offset by remember(att.id) { mutableStateOf(Offset.Zero) }
     var openError by remember(att.id) { mutableStateOf("") }
     val preview by produceState(initialValue = PreviewResult(), att.localPath) {
-        val loaded = withContext(Dispatchers.IO) {
-            runCatching { PreviewResult(bitmap = loadPreviewBitmap(att.localPath)) }
-                .getOrElse { PreviewResult(error = it.message ?: "원본 미리보기를 열 수 없습니다.") }
+        val loaded = try {
+            PreviewResult(bitmap = loadUprightPreview(
+                att.localPath, att.type == "ORIGINAL_REQUEST" || att.type == "CONFIRMATION"
+            ))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            PreviewResult(error = error.message ?: "원본 미리보기를 열 수 없습니다.")
         }
         value = loaded
         awaitDispose {
@@ -161,7 +170,24 @@ private fun attachmentTitle(att: Attachment): String = when (att.type) {
     else -> "첨부 원본"
 }
 
-private fun loadPreviewBitmap(path: String, maxSide: Int = 1600): Bitmap {
+/** Rotate only the displayed copy; the file and its evidence hash remain unchanged. */
+private suspend fun loadUprightPreview(path: String, document: Boolean): Bitmap {
+    var source: Bitmap? = null
+    var output: Bitmap? = null
+    try {
+        withContext(Dispatchers.IO) { source = loadPreviewBitmap(path) }
+        output = if (document) DocumentOrientation.correct(requireNotNull(source)).bitmap else source
+        currentCoroutineContext().ensureActive()
+        return requireNotNull(output)
+    } catch (t: Throwable) {
+        output?.let { if (!it.isRecycled) it.recycle() }
+        throw t
+    } finally {
+        source?.let { if (it !== output && !it.isRecycled) it.recycle() }
+    }
+}
+
+private fun loadPreviewBitmap(path: String, maxSide: Int = 2200): Bitmap {
     val file = File(path)
     require(file.exists()) { "원본 파일이 없습니다." }
 

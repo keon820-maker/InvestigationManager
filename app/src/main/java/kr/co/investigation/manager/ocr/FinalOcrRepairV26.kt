@@ -18,7 +18,7 @@ import kotlin.coroutines.resumeWithException
  */
 object FinalOcrRepairV26 {
     suspend fun repair(normalized: DocumentNormalizer.Result, base: OcrService.OcrResult): OcrService.OcrResult {
-        val rawManagement = extractManagementNo(base.rawText)
+        val rawManagement = extractManagementNo(base.sourceText)
         var fixed = base.parsed.copy(
             managementNo = rawManagement.ifBlank { cleanManagementNo(base.parsed.managementNo) },
             requestNotes = cleanNotes(base.parsed.requestNotes),
@@ -73,7 +73,7 @@ object FinalOcrRepairV26 {
                 branchPhone = branchPhone.ifBlank { fixed.branchPhone },
                 branchFax = branchFax.ifBlank { fixed.branchFax },
                 requestNotes = cleanNotes(fixed.requestNotes),
-                managementNo = extractManagementNo(base.rawText).ifBlank { cleanManagementNo(fixed.managementNo) }
+                managementNo = extractManagementNo(base.sourceText).ifBlank { cleanManagementNo(fixed.managementNo) }
             )
 
             finish(base, fixed, buildString {

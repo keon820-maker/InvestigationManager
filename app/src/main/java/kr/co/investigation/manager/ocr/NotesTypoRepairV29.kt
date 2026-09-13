@@ -34,7 +34,7 @@ object NotesTypoRepairV29 {
             Regex("사전\\s*통화\\s*후\\s*방문") to "사전 통화 후 방문",
             Regex("입주\\s*사실\\s*흑\\s*인") to "입주 사실 확인",
             Regex("본인\\s*입주\\s*사실\\s*흑\\s*인") to "본인 입주 사실 확인",
-            Regex("[월울]\\s*[임은]\\s*[차치]\\s*[료로]\\s*[:：]?") to "월임차료:"
+            Regex("[월울]\\s*[임은]\\s*[차치초]\\s*[료로]\\s*[:：]?") to "월임차료:"
         )
         replacements.forEach { (pattern, replacement) -> s = s.replace(pattern, replacement) }
 
@@ -44,59 +44,89 @@ object NotesTypoRepairV29 {
             .replace(Regex("\\s+([,.])"), "$1")
             .replace(Regex("[ \\t]{2,}"), " ")
 
-        val sourceLines = s.lines()
+        return cleanRepeatedSections(s)
+    }
+
+    /**
+     * Also safe to apply to an existing editor draft: remove structural duplicate
+     * sections, never delete all text after a repeated heading. Conflicting numbers,
+     * dates, people roles or visit instructions remain visible for review.
+     */
+    internal fun cleanRepeatedSections(value: String): String {
+        val sourceLines = value.lines()
             .map { it.replace(Regex("[ \\t]+"), " ").trim() }
             .map { it.trimStart('|', '｜', '│') .trimStart() }
             .filter { it.isNotBlank() }
 
         val cleaned = mutableListOf<String>()
+        var repeatedSection = false
+        fun addLine(line: String) {
+            if (line.isBlank()) return
+            if (cleaned.any { canonicalLine(it) == canonicalLine(line) }) return
+            // Only known OCR-confusion spellings may share an identity. A generic
+            // edit-distance match can delete distinct requests such as 등기부/등기일.
+            if (repeatedSection && cleaned.any { isRepeatedReading(it, line) }) return
+            cleaned += line
+        }
         for (line in sourceLines) {
-            val inlineHeaderStart = findInlineNotesHeaderStart(line)
-            if (inlineHeaderStart >= 0) {
-                val rawPrefix = line.substring(0, inlineHeaderStart).trim()
+            val header = findInlineNotesHeader(line)
+            if (header != null) {
+                val rawPrefix = line.substring(0, header.range.first).trim()
                 val sectionMarkerOnly = rawPrefix.matches(Regex("^[0-9A-Za-z가-힣]{1,2}[.)．:]?$"))
                 if (!sectionMarkerOnly) {
                     val prefix = rawPrefix
                         .trimEnd('.', ',', '·', 'ㆍ')
                         .trim()
-                    if (prefix.isNotBlank()) cleaned += prefix
+                    addLine(prefix)
                 }
-                if (cleaned.isNotEmpty()) break
+                repeatedSection = cleaned.isNotEmpty()
+                addLine(line.substring(header.range.last + 1).trimStart(' ', ':', '：', '|'))
                 continue
             }
 
-            // `3.7 E-요청항`처럼 표 제목이 심하게 깨져 다시 들어오면 그 이후는 두 번째 OCR 블록이다.
-            if (looksLikeRepeatedNotesMarker(line)) {
-                if (cleaned.isNotEmpty()) break
-                continue
-            }
-
-            if (looksLikeNotesHeader(line)) {
-                if (cleaned.isNotEmpty()) break
+            if (looksLikeRepeatedNotesMarker(line) || looksLikeNotesHeader(line)) {
+                repeatedSection = cleaned.isNotEmpty()
                 continue
             }
 
             if (looksLikeTrailingFooterNoise(line, cleaned)) continue
-
-            cleaned += line
+            addLine(line)
         }
 
-        val unique = linkedMapOf<String, String>()
-        cleaned.forEach { line -> unique.putIfAbsent(canonicalLine(line), line) }
-        return unique.values.joinToString("\n").trim()
+        return cleaned.joinToString("\n").trim()
     }
 
     private fun canonicalLine(line: String): String = line
-        .replace(Regex("[\\s.,!?·ㆍ:：|｜│]+"), "")
-        .trim()
+        .trim().trimEnd('.', '。')
+        .replace('：', ':')
+        .replace(Regex("[\\s,!?·ㆍ|｜│]+"), "")
 
-    private fun findInlineNotesHeaderStart(line: String): Int {
+    private fun findInlineNotesHeader(line: String): MatchResult? {
         val patterns = listOf(
             Regex("기\\s*타\\s*요\\s*[청천추침]\\s*[사시]\\s*항"),
             Regex("기\\s*타\\s*요\\s*최\\s*시\\s*환"),
             Regex("기\\s*[eE]\\s*요\\s*최\\s*시\\s*환")
         )
-        return patterns.mapNotNull { it.find(line)?.range?.first }.minOrNull() ?: -1
+        return patterns.mapNotNull { it.find(line) }
+            .filter { match ->
+                val after = line.getOrNull(match.range.last + 1)
+                // "기타요청사항은 ..." is a sentence, not a section heading.
+                after == null || after.isWhitespace() || after in ":：|"
+            }.minByOrNull { it.range.first }
+    }
+
+    private fun isRepeatedReading(first: String, repeated: String): Boolean {
+        // Normalization is comparison-only: keep the first text verbatim. No
+        // numeric substitutions or general similarity threshold are permitted.
+        fun readingKey(value: String): String = canonicalLine(value)
+            .replace(Regex("(?:때|[Cc])출(?=실행|완료)"), "대출")
+            .replace("임미차확인", "임대차확인")
+            .replace("임다츠현장조사", "임대차현장조사")
+            .replace("입주사실흑인", "입주사실확인")
+            .replace("계약흑인요청", "계약확인요청")
+            .replace("본인기주", "본인거주")
+            .replace("부탁드립니드", "부탁드립니다")
+        return readingKey(first) == readingKey(repeated)
     }
 
     private fun looksLikeRepeatedNotesMarker(line: String): Boolean {

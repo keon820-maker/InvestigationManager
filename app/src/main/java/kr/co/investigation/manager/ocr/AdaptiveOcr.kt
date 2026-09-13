@@ -33,6 +33,7 @@ object AdaptiveOcr {
 
             if (score >= 5) {
                 OcrService.OcrResult(
+                    sourceText = full.text,
                     rawText = buildString {
                         append(spatial.diagnostic)
                         append("\n--- 전체 OCR 원문(참고) ---\n")

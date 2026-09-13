@@ -9,7 +9,7 @@ object FinalResultConsistencyV3512 {
         val before = base.parsed
         val management = normalizeManagement(before.managementNo)
         val branch = normalizeBranch(before.branch)
-        val investigationType = preserveInvestigationQualifier(before.investigationType, base.rawText)
+        val investigationType = preserveInvestigationQualifier(before.investigationType, base.sourceText)
         val fixed = before.copy(
             managementNo = management.ifBlank { before.managementNo.trim() },
             branch = branch.ifBlank { before.branch.trim() },

@@ -22,7 +22,6 @@ import org.opencv.imgproc.Imgproc
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
-import kotlin.math.min
 
 /** OCR 전용 문서 정렬기. 증거 원본 파일은 수정하지 않고 메모리 Bitmap만 처리한다. */
 object DocumentNormalizer {
@@ -51,22 +50,59 @@ object DocumentNormalizer {
     private const val ANCHOR_RIGHT = 2370.0
     private const val ANCHOR_BOTTOM = 2240.0
 
-    suspend fun normalize(context: Context, uri: Uri): Result = withContext(Dispatchers.Default) {
-        val srcBitmap = loadBitmapWithExif(context, uri)
-        if (!OpenCVLoader.initLocal()) {
-            return@withContext Result(srcBitmap, false, "OpenCV 초기화 실패 - EXIF 회전만 적용")
+    suspend fun normalize(context: Context, uri: Uri): Result {
+        var output: Result? = null
+        try {
+            return withContext(Dispatchers.Default) {
+                normalizeInMemory(context, uri).also { output = it }
+            }
+        } catch (t: Throwable) {
+            // withContext can be cancelled while handing the bitmap back to the caller.
+            output?.bitmap?.let { if (!it.isRecycled) it.recycle() }
+            throw t
         }
+    }
 
-        val working = downscaleForDetection(srcBitmap, 3200)
+    private suspend fun normalizeInMemory(context: Context, uri: Uri): Result {
+        val decoded = loadBitmapWithExif(context, uri)
+        val source = try { downscaleForDetection(decoded, 3200) } catch (t: Throwable) {
+            decoded.recycle()
+            throw t
+        }
+        if (source !== decoded) decoded.recycle()
+        var upright: Bitmap? = null
+        var result: Result? = null
+        return try {
+            // Correct content direction before looking for portrait page/table corners.
+            // Camera EXIF alone cannot tell whether the paper was held sideways.
+            val orientation = DocumentOrientation.correct(source)
+            upright = orientation.bitmap
+            val prefix = when {
+                orientation.clockwiseDegrees != 0 -> "문서 ${orientation.clockwiseDegrees}도 자동 회전 / "
+                orientation.confident -> "문서 방향 확인 / "
+                else -> "문서 방향 불확실 - 원본 방향 유지 / "
+            }
+            normalizeUpright(orientation.bitmap).let {
+                it.copy(message = prefix + it.message).also { output -> result = output }
+            }
+        } finally {
+            if (source !== result?.bitmap && !source.isRecycled) source.recycle()
+            upright?.let { if (it !== result?.bitmap && !it.isRecycled) it.recycle() }
+        }
+    }
+
+    private fun normalizeUpright(working: Bitmap): Result {
+        if (!OpenCVLoader.initLocal()) {
+            return Result(working, false, "문서 테두리 보정 없이 전체 이미지 OCR")
+        }
         val rgba = Mat()
-        Utils.bitmapToMat(working, rgba)
-
         val gray = Mat()
         val enhanced = Mat()
         val edges = Mat()
         val hierarchy = Mat()
         val contours = mutableListOf<MatOfPoint>()
-        val result = try {
+        return try {
+            Utils.bitmapToMat(working, rgba)
             Imgproc.cvtColor(rgba, gray, Imgproc.COLOR_RGBA2GRAY)
             Imgproc.GaussianBlur(gray, gray, Size(5.0, 5.0), 0.0)
             Imgproc.createCLAHE(2.2, Size(8.0, 8.0)).apply(gray, enhanced)
@@ -116,7 +152,7 @@ object DocumentNormalizer {
             // 1) 진짜 종이 외곽: A4 종횡비에 가깝고 충분히 큰 사각형만 허용한다.
             // v0.9 문제의 원인이었던 중앙 표(비율 약 2.2)는 여기서 절대 종이로 선택되지 않는다.
             val page = quads
-                .filter { it.areaFraction >= 0.28 && it.ratio in 1.16..1.78 }
+                .filter { it.areaFraction >= 0.28 && it.ratio in (1.0 / 1.78)..(1.0 / 1.16) }
                 .maxByOrNull { pageScore(it) }
 
             // 2) 종이 가장자리가 사진 밖으로 잘린 경우: 고정 양식 중앙 대형 표를 기준으로 정렬한다.
@@ -176,9 +212,6 @@ object DocumentNormalizer {
             gray.release(); enhanced.release(); edges.release(); hierarchy.release(); rgba.release()
             contours.forEach { runCatching { it.release() } }
         }
-        if (result.bitmap !== working && !working.isRecycled) working.recycle()
-        if (working !== srcBitmap && result.bitmap !== srcBitmap && !srcBitmap.isRecycled) srcBitmap.recycle()
-        result
     }
 
     private fun warp(source: Mat, from: Array<Point>, to: Array<Point>, message: String): Result {
@@ -217,14 +250,16 @@ object DocumentNormalizer {
         val width = (top + bottom) / 2.0
         val height = (left + right) / 2.0
         if (width < 80 || height < 80) return null
-        val ratio = max(width, height) / min(width, height).coerceAtLeast(1.0)
+        // Keep signed width/height semantics: a sideways page must never be stretched
+        // into portrait A4 simply because its long/short-side ratio resembles A4.
+        val ratio = width / height.coerceAtLeast(1.0)
         val centerY = points.map { it.y }.average() / frameHeight.toDouble()
         val widthFraction = width / frameWidth.toDouble()
         return QuadCandidate(points, areaFraction, ratio, centerY, widthFraction)
     }
 
     private fun pageScore(c: QuadCandidate): Double {
-        val aspect = (1.0 - abs(c.ratio - A4_RATIO) / 0.45).coerceIn(0.0, 1.0)
+        val aspect = (1.0 - abs(c.ratio - 1.0 / A4_RATIO) / 0.25).coerceIn(0.0, 1.0)
         return c.areaFraction * 8.0 + aspect * 3.0 + c.widthFraction
     }
 
@@ -271,9 +306,13 @@ object DocumentNormalizer {
             ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
         }
         if (matrix.isIdentity) return decoded
-        val rotated = Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
-        if (rotated !== decoded) decoded.recycle()
-        return rotated
+        return try {
+            Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
+                .also { if (it !== decoded) decoded.recycle() }
+        } catch (t: Throwable) {
+            if (!decoded.isRecycled) decoded.recycle()
+            throw t
+        }
     }
 
     private fun downscaleForDetection(src: Bitmap, maxSide: Int): Bitmap {

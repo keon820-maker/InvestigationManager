@@ -9,7 +9,7 @@ package kr.co.investigation.manager.ocr
  */
 object ContactInfoRepair {
     fun repair(base: OcrService.OcrResult): OcrService.OcrResult {
-        val raw = base.rawText
+        val raw = base.sourceText
         val parsed = base.parsed
         val header = headerSection(raw)
 

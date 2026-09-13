@@ -66,7 +66,7 @@ class OcrRegressionV354Test {
     }
 
     @Test
-    fun hangulSectionMarkerAndOneCharacterHeaderTypoDropsRepeatedBlock() {
+    fun hangulSectionMarkerRemovesDuplicateInstructionsButKeepsConflictingAmount() {
         val duplicated = """
             임대인께 방문 전 연락부탁드립니다.
             보증금:100000000
@@ -82,13 +82,13 @@ class OcrRegressionV354Test {
         val base = OcrService.OcrResult("", InvestigationCase(year = 2026, requestNotes = duplicated), true, "")
         val fixed = NotesTypoRepairV29.repair(base).parsed.requestNotes
         assertEquals(
-            "임대인께 방문 전 연락부탁드립니다.\n보증금:100000000\n월임차료:600000\n임대차시작일자:20261002\n임대차종료일자:20281002",
+            "임대인께 방문 전 연락부탁드립니다.\n보증금:100000000\n월임차료:600000\n임대차시작일자:20261002\n임대차종료일자:20281002\n보증금:00000000.",
             fixed
         )
     }
 
     @Test
-    fun inlineRepeatedHeaderKeepsPrefixAndDropsSecondOcrBlock() {
+    fun inlineRepeatedHeaderKeepsPrefixAndUnrecognizedSecondReadingForReview() {
         val duplicated = """
             다가구주택 9/29일 2년 계약 임대차확인요청드립니다
             보증금: 150000000
@@ -101,7 +101,7 @@ class OcrRegressionV354Test {
         val base = OcrService.OcrResult("", InvestigationCase(year = 2026, requestNotes = duplicated), true, "")
         val fixed = NotesTypoRepairV29.repair(base).parsed.requestNotes
         assertEquals(
-            "다가구주택 9/29일 2년 계약 임대차확인요청드립니다\n보증금: 150000000\n월임차료:0\n임대차시작일자:20260929\n임대차종료일자:20280928",
+            "다가구주택 9/29일 2년 계약 임대차확인요청드립니다\n보증금: 150000000\n월임차료:0\n임대차시작일자:20260929\n임대차종료일자:20280928\n다가구주택 9/29일 2년 기의 은데치흑인요청드립니다",
             fixed
         )
     }
