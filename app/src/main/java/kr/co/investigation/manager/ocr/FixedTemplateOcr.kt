@@ -208,7 +208,7 @@ object FixedTemplateOcr {
         fun validDate(s: String) = Regex("20\\d{2}-\\d{2}-\\d{2}").matches(s)
         fun validPhone(s: String) = Regex("0\\d{1,2}-\\d{3,4}-\\d{4}").matches(s)
         fun validName(s: String) = Regex("[가-힣]{2,6}").matches(s)
-        fun validDebtor(s: String) = Regex("[가-힣]{2,6}(?:\\(\\d{6}(?:-\\*)?\\))?").matches(s)
+        fun validDebtor(s: String) = OcrFieldNormalizer.validDebtor(s)
         return t.copy(
             managementNo = t.managementNo.ifBlank { f.managementNo.takeIf(::validManagement).orEmpty() },
             requestDate = t.requestDate.ifBlank { f.requestDate.takeIf(::validDate).orEmpty() },

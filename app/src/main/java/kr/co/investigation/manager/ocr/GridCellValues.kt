@@ -19,8 +19,9 @@ internal object GridCellValues {
     fun text(value: String) = value.replace(Regex("[\\t ]+"), " ").lines()
         .map(String::trim).filter(String::isNotBlank).joinToString("\n")
     fun singleLine(value: String) = text(value).replace('\n', ' ').trim()
-    fun name(value: String): String = singleLine(value).replace(" ", "")
-        .takeIf { Regex("[가-힣]{2,6}").matches(it) && TenantResultSanitizer.validTenantName(it) }.orEmpty()
+    fun name(value: String): String = LegalEntityNames.compact(value)
+        .takeIf { (Regex("[가-힣]{2,6}").matches(it) || LegalEntityNames.normalize(it).isNotBlank()) &&
+            TenantResultSanitizer.validTenantName(it) }.orEmpty()
 
     fun identity(value: String): String {
         val joined = value.replace(Regex("(?<=[가-힣])\\s+(?=[가-힣])"), "")
@@ -38,6 +39,9 @@ internal object GridCellValues {
         .find(value.replace(Regex("\\s+"), ""))?.value.orEmpty()
 
     fun address(value: String): String = singleLine(value).replace(Regex("^\\d{5,6}\\s+"), "")
+        // Rejoin an OCR line/space split inside a numbered road name, retaining all
+        // building, apartment and unit numbers exactly as printed.
+        .replace(Regex("([가-힣]+(?:로|길)\\d+)\\s+(번?길)(?=\\s|$)"), "$1$2")
 
     fun phones(value: String): List<String> {
         val fixed = value.uppercase().replace('O', '0').replace('I', '1').replace('L', '1')

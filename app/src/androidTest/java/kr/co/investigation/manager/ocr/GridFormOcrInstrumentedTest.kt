@@ -13,11 +13,23 @@ import java.io.File
 class GridFormOcrInstrumentedTest {
     @Test fun scanKeepsEmptyTenantCellsAndRepeatedContacts() = verify(populatedTenant = false, perspective = false)
     @Test fun photoKeepsWrappedTenantPhoneInItsOwnCell() = verify(populatedTenant = true, perspective = true)
+    @Test fun smallOffsetPhotoKeepsCorporateNamesAndFinanceCenterFooter() =
+        verify(populatedTenant = true, perspective = true, corporate = true)
 
-    private fun verify(populatedTenant: Boolean, perspective: Boolean) = runBlocking {
+    private fun verify(populatedTenant: Boolean, perspective: Boolean, corporate: Boolean = false) = runBlocking {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
-        val source = drawForm(populatedTenant)
-        val image = if (perspective) {
+        val source = drawForm(populatedTenant, corporate)
+        val image = if (corporate) {
+            // A phone photo where the sheet occupies only the lower part of the frame.
+            // Generate it here: no user photograph or identifying values enter CI.
+            Bitmap.createBitmap(1080, 2400, Bitmap.Config.ARGB_8888).also { photo ->
+                val matrix = Matrix().apply {
+                    setPolyToPoly(floatArrayOf(0f,0f,2480f,0f,2480f,3508f,0f,3508f),0,
+                        floatArrayOf(20f,880f,1060f,910f,1050f,2380f,15f,2350f),0,4)
+                }
+                Canvas(photo).apply { drawColor(Color.DKGRAY); drawBitmap(source,matrix,Paint(Paint.FILTER_BITMAP_FLAG)) }
+            }
+        } else if (perspective) {
             val warped = Bitmap.createBitmap(2700, 3800, Bitmap.Config.ARGB_8888)
             val matrix = Matrix()
             matrix.setPolyToPoly(floatArrayOf(0f,0f,2480f,0f,2480f,3508f,0f,3508f),0,
@@ -31,7 +43,7 @@ class GridFormOcrInstrumentedTest {
             val result = OcrService.recognizeCase(context, Uri.fromFile(file))
             assertTrue("Verified grid route was not used",result.preprocessMessage.contains("실제 칸 경계 확인"))
             val c=result.parsed
-            assertEquals("가나다(900101-*)",c.debtorName)
+            assertEquals(if(corporate) "주식회사가상테스트(990101-*)" else "가나다(900101-*)",c.debtorName)
             assertEquals("부동산 담보대출",c.loanType)
             assertEquals("2026-03-09",c.dueDate)
             assertEquals("010-0000-0000",c.phone)
@@ -42,13 +54,19 @@ class GridFormOcrInstrumentedTest {
             val tenants=JSONArray(c.tenantsJson)
             assertEquals(if(populatedTenant) 1 else 0,tenants.length())
             if(populatedTenant) {
-                assertEquals("라마바",tenants.getJSONObject(0).getString("name"))
-                assertEquals("010-0000-0001",tenants.getJSONObject(0).getString("phone"))
+                assertEquals(if(corporate) "주식회사가상테스트" else "라마바",tenants.getJSONObject(0).getString("name"))
+                assertEquals(if(corporate) "010-0000-1111" else "010-0000-0001",tenants.getJSONObject(0).getString("phone"))
+            }
+            if (corporate) {
+                assertEquals("가상금융센터",c.branch)
+                assertEquals("사아자",c.requester)
+                assertEquals("02-0000-0000",c.branchPhone)
+                assertEquals("0505-0000-0001",c.branchFax)
             }
         } finally { file.delete(); if(image!==source) image.recycle();source.recycle() }
     }
 
-    private fun drawForm(tenant:Boolean):Bitmap {
+    private fun drawForm(tenant:Boolean, corporate:Boolean=false):Bitmap {
         val bitmap=Bitmap.createBitmap(2480,3508,Bitmap.Config.ARGB_8888)
         val canvas=Canvas(bitmap);canvas.drawColor(Color.WHITE)
         val pen=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=Color.BLACK;style=Paint.Style.STROKE;strokeWidth=3f}
@@ -57,14 +75,16 @@ class GridFormOcrInstrumentedTest {
             for(i in 0 until edges.size-1) {
                 val left=160+2160*edges[i]; val right=160+2160*edges[i+1]
                 canvas.drawRect(left,y.toFloat(),right,(y+height).toFloat(),pen)
-                values.getOrElse(i){""}.lines().forEachIndexed { line,text -> canvas.drawText(text,left+12,y+45f+line*38,font) }
+                val value = values.getOrElse(i){""}
+                val cellFont = if(corporate && value.startsWith("주식회사")) Paint(font).apply { textSize=30f } else font
+                value.lines().forEachIndexed { line,text -> canvas.drawText(text,left+12,y+45f+line*38,cellFont) }
             }
         }
         canvas.drawText("조 사 의 뢰 서",850f,230f,Paint(font).apply{textSize=80f})
         canvas.drawText("의뢰일 : 2026년 03월 04일",850f,350f,font)
         canvas.drawText("관리번호 : 테스트202603-00001",180f,430f,font)
         canvas.drawText("조사담당자 : 제외대상 Tel 010-9999-9999",180f,530f,font)
-        row(800,100,listOf(0f,.14f,.30f,.44f,.60f,.74f,1f),listOf("채무자 명","가나다(900101-*)","전화번호","010-0000-0000","핸드폰번호","010-0000-0000"))
+        row(800,100,listOf(0f,.14f,.30f,.44f,.60f,.74f,1f),listOf("채무자 명",if(corporate) "주식회사 가상테스트\n(990101-*)" else "가나다(900101-*)","전화번호","010-0000-0000","핸드폰번호","010-0000-0000"))
         row(900,100,listOf(0f,.14f,.30f,.44f,1f),listOf("완료요청일","2026-03-09","비고",""))
         row(1150,100,listOf(0f,.14f,.58f,.72f,1f),listOf("조사구분","임대차조사(현장조사)","대출종류","부동산담보대출"))
         row(1250,100,listOf(0f,.14f,.58f,.72f,1f),listOf("물건종류","아파트","",""))
@@ -72,11 +92,13 @@ class GridFormOcrInstrumentedTest {
         row(1450,100,listOf(0f,.14f,.28f,.58f,.72f,1f),listOf("물건소유자","성명","가나다(900101-*)","연락처","010-0000-0000"))
         row(1550,100,listOf(0f,.14f,1f),listOf("소유자주소","12345 테스트시 가상로 2 102동 102호"))
         for(i in 0..4) row(1660+i*100,100,listOf(0f,.14f,.25f,.34f,.5f,.64f,.75f,.84f,1f),
-            listOf("임차인${i*2+1}(성명)",if(tenant&&i==0)"라마바" else "","전화번호",if(tenant&&i==0)"010-0000-\n0001" else "","임차인${i*2+2}(성명)","","전화번호",""))
+            listOf("임차인${i*2+1}(성명)",if(tenant&&i==0) { if(corporate) "주식회사 가상\n테스트" else "라마바" } else "","전화번호",
+                if(tenant&&i==0) { if(corporate) "01000001111[010\n00001111]" else "010-0000-\n0001" } else "","임차인${i*2+2}(성명)","","전화번호",""))
         row(2370,300,listOf(0f,1f),listOf("합성 문서입니다. 방문 전 연락 요청"))
-        canvas.drawText("농협영업점 : 테스트지점",1100f,2840f,font)
+        canvas.drawText(if(corporate) "농협영업점 : 가상금융센터" else "농협영업점 : 테스트지점",1100f,2840f,font)
         canvas.drawText("조사의뢰자 : 사아자",1100f,2940f,font)
-        canvas.drawText("전화번호 : 031-000-0000   팩스 : 031-000-0001",1100f,3040f,font)
+        val footerFont = if(corporate) Paint(font).apply { textSize=30f } else font
+        canvas.drawText(if(corporate) "전화번호 : 02-0000-0000   팩스 : 0505-0000-0001" else "전화번호 : 031-000-0000   팩스 : 031-000-0001",1100f,3040f,footerFont)
         return bitmap
     }
 }

@@ -78,6 +78,10 @@ fun RequestDocumentView(c: InvestigationCase, modifier: Modifier = Modifier) {
             DocCell("비     고", 1.25f, true, TextAlign.Center)
             DocCell("", 5.35f)
         }
+        Row(Modifier.fillMaxWidth()) {
+            DocCell("조사예정일", 1.25f, true, TextAlign.Center)
+            DocCell(c.plannedDate.ifBlank { "미지정" }, 8.75f)
+        }
 
         SectionTitle("2. 의뢰 내용")
         Row(Modifier.fillMaxWidth()) {

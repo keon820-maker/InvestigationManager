@@ -241,7 +241,7 @@ object AnchorContactRepairV3518 {
         return out.toString()
     }
 
-    private fun bareName(value: String): String = value.substringBefore('(').replace(" ", "").trim()
+    private fun bareName(value: String): String = OcrFieldNormalizer.withoutIdentity(value).replace(" ", "").trim()
     private fun compact(value: String): String = value.replace(Regex("[^0-9A-Za-z가-힣]"), "")
 
     private suspend fun recognize(client: TextRecognizer, bitmap: Bitmap): Text =

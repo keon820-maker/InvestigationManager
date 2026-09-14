@@ -6,7 +6,7 @@ import org.json.JSONObject
 /**
  * v0.35.26: 임차인 표의 라벨/주소 조각/깨진 OCR이 실제 임차인으로 생성되는 문제를 차단한다.
  *
- * 핵심 원칙은 '유효한 사람 이름이 없으면 임차인 행 자체를 만들지 않는다'이다.
+ * 핵심 원칙은 '유효한 사람/법인 이름이 없으면 임차인 행 자체를 만들지 않는다'이다.
  * 라벨이나 행정구역명이 이름 칸으로 들어오고 다른 칸의 전화번호만 정상 인식된 경우에도
  * 임차인 행 전체를 제거한다.
  */
@@ -34,19 +34,23 @@ object TenantResultSanitizer {
             }
 
             val name = normalizeTenantName(rawName)
-            val phone = rawPhone.takeIf(::validTenantPhone).orEmpty()
-            if (name != rawName.replace(" ", "").trim() || phone != rawPhone) changed = true
+            val phone = rawPhone.takeIf(::validTenantPhone)
+                ?: GridCellValues.phone(rawPhone).takeIf(::validTenantPhone).orEmpty()
+            if (name != rawName || phone != rawPhone) changed = true
             candidates += Candidate(name, phone)
         }
 
         // 3개 이상 후보 중 70% 이상이 전화번호 없는 이름뿐이면 표 구조 붕괴 가능성이 높다.
-        // 이 경우 전화번호까지 함께 확인된 행만 보존한다. 채무자 이름을 임차인으로 자동 승격하지 않는다.
+        // 이 경우 전화번호 또는 명시적 법인형태까지 확인된 행만 보존한다.
+        // 채무자 이름을 임차인으로 자동 승격하지 않는다.
         val phoneLessCount = candidates.count { it.phone.isBlank() }
-        val massHallucination = candidates.size >= 3 && phoneLessCount * 10 >= candidates.size * 7
+        val personalNames = candidates.filter { LegalEntityNames.normalize(it.name).isBlank() }
+        val massHallucination = personalNames.size >= 3 &&
+            personalNames.count { it.phone.isBlank() } * 10 >= personalNames.size * 7
 
         val filtered = if (massHallucination) {
             changed = true
-            candidates.filter { it.phone.isNotBlank() }
+            candidates.filter { it.phone.isNotBlank() || LegalEntityNames.normalize(it.name).isNotBlank() }
         } else {
             candidates
         }
@@ -79,6 +83,8 @@ object TenantResultSanitizer {
     }
 
     internal fun validTenantName(value: String): Boolean {
+        if (LegalEntityNames.normalize(value).isNotBlank()) return true
+        if (LegalEntityNames.hasMarker(value)) return false
         val compact = normalizeTenantName(value)
         if (!Regex("[가-힣]{2,6}").matches(compact)) return false
 
@@ -130,9 +136,8 @@ object TenantResultSanitizer {
         return Regex("[가-힣]{2,}(?:특별자치도|특별자치시|광역시|특별시|도|시|군|구|읍|면|동|리)").matches(compact)
     }
 
-    private fun normalizeTenantName(value: String): String = value
-        .filter { it in '가'..'힣' }
-        .trim()
+    internal fun normalizeTenantName(value: String): String = LegalEntityNames.normalize(value)
+        .ifBlank { value.filter { it in '가'..'힣' }.trim() }
 
     private fun editDistance(a: String, b: String): Int {
         if (a == b) return 0
