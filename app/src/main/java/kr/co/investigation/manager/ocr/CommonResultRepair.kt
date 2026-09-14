@@ -68,13 +68,7 @@ object CommonResultRepair {
             .orEmpty()
     }
 
-    private fun extractBranch(raw: String): String {
-        val regex = Regex("(?:농\\s*협\\s*)?영\\s*업\\s*점\\s*[:：]?\\s*([가-힣0-9]{2,24}지점)", RegexOption.IGNORE_CASE)
-        return regex.findAll(raw)
-            .map { it.groupValues[1].replace(" ", "").trim() }
-            .firstOrNull(::validBranch)
-            .orEmpty()
-    }
+    private fun extractBranch(raw: String): String = FooterFields.parse(raw).branch
 
     private fun extractPropertyType(raw: String): String {
         val labelRegex = Regex("물\\s*건\\s*종\\s*류\\s*[:：|]?\\s*([^\\n|]{1,30})")
@@ -204,10 +198,7 @@ object CommonResultRepair {
         return s !in bad && !s.contains("전화") && !s.contains("의뢰") && !s.contains("영업점") && !s.contains("신청")
     }
 
-    private fun validBranch(value: String): Boolean {
-        val s = value.replace(" ", "")
-        return s.length in 4..30 && s.endsWith("지점") && !s.contains("조사의뢰자") && !s.contains("전화번호") && !s.contains("신청인")
-    }
+    private fun validBranch(value: String): Boolean = FooterFields.branch(value).isNotBlank()
 
     private fun looksLikeAddress(value: String): Boolean = value.length >= 8 && Regex(
         "(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주|[가-힣]+시|[가-힣]+군|[가-힣]+구|[가-힣]+로|[가-힣]+길|[가-힣]+동)"

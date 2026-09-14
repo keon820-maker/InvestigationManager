@@ -21,7 +21,7 @@ object TargetTenantOcrRepair {
     private const val H = 3508f
 
     private data class Box(val l: Int, val t: Int, val r: Int, val b: Int)
-    private data class Tenant(val name: String = "", val phone: String = "")
+    internal data class Tenant(val name: String = "", val phone: String = "")
 
     suspend fun repair(normalized: DocumentNormalizer.Result, base: OcrService.OcrResult): OcrService.OcrResult {
         if (!normalized.documentDetected || normalized.bitmap.width < 1800 || normalized.bitmap.height < 2500) {
@@ -189,20 +189,24 @@ object TargetTenantOcrRepair {
         "(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주|[가-힣]+시|[가-힣]+군|[가-힣]+구|[가-힣]+로|[가-힣]+길|[가-힣]+동)"
     ).containsMatchIn(value)
 
-    private fun parseTenantHalf(raw: String): Tenant {
-        val normalized = normalizeDigits(raw)
-        val phone = phonePattern.find(normalized)?.value?.let(::normalizePhone).orEmpty()
-        val bad = setOf(
-            "임차인", "성명", "전화번호", "전화번", "번호", "연락처", "전환번호",
-            "임차인성명", "전화"
-        )
-        val name = Regex("[가-힣]{2,6}").findAll(raw)
-            .map { it.value }
-            .firstOrNull { candidate ->
-                candidate !in bad && !candidate.startsWith("임차인") &&
-                    !candidate.contains("전화") && !candidate.contains("번호") && !candidate.contains("성명")
+    internal fun parseTenantHalf(raw: String): Tenant {
+        val normalized = raw.replace('O', '0').replace('o', '0').replace('I', '1').replace('L', '1').replace('l', '1')
+        val phone = GridCellValues.phone(raw)
+        // Remove only the phone spans and table labels. Joining all remaining name
+        // lines keeps corporate suffixes when a narrow tenant cell wraps the name.
+        var nameText = raw
+        Regex("(?<!\\d)0\\d{1,3}[\\s.\\-)]*\\d{3,4}[\\s.\\-]*\\d{4}(?!\\d)")
+            .findAll(normalized).toList().asReversed().forEach { match ->
+                nameText = nameText.removeRange(match.range)
             }
-            .orEmpty()
+        nameText = nameText
+            .replace(Regex("임\\s*[차치]\\s*인\\s*\\d*\\s*[（(]?\\s*성\\s*명\\s*[）)]?"), " ")
+            .replace(Regex("임\\s*[차치]\\s*인\\s*\\d*"), " ")
+            .replace(Regex("전\\s*[화환]\\s*번\\s*호|연\\s*락\\s*처|성\\s*명"), " ")
+            .replace(Regex("[\\[\\]|:：]"), " ")
+            .replace(Regex("(?:^|\\s)(?:전화번|전호번|전화|번호)\\s*$"), " ")
+            .trim()
+        val name = GridCellValues.name(nameText)
         return Tenant(name = name, phone = phone)
     }
 
@@ -212,7 +216,7 @@ object TargetTenantOcrRepair {
             val old = existing.getOrNull(index) ?: Tenant()
             val fresh = detected.getOrNull(index) ?: Tenant()
             Tenant(
-                name = old.name.ifBlank { fresh.name },
+                name = OcrFieldNormalizer.preferDebtor(GridCellValues.name(old.name), GridCellValues.name(fresh.name)),
                 phone = old.phone.ifBlank { fresh.phone }
             )
         }

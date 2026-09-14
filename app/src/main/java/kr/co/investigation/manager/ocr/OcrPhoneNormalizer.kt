@@ -25,6 +25,8 @@ internal object OcrPhoneNormalizer {
                 "${d.substring(0, 3)}-${d.substring(3, 7)}-${d.substring(7)}"
             d.length == 10 && d.startsWith("02") ->
                 "02-${d.substring(2, 6)}-${d.substring(6)}"
+            d.length == 10 && d.substring(0, 3) in setOf("011", "016", "017", "018", "019") ->
+                "${d.substring(0, 3)}-${d.substring(3, 6)}-${d.substring(6)}"
             d.length == 10 && d.substring(0, 3) in threeDigitPrefixes ->
                 "${d.substring(0, 3)}-${d.substring(3, 6)}-${d.substring(6)}"
             d.length == 9 && d.startsWith("02") ->

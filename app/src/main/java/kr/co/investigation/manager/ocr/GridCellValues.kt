@@ -19,8 +19,9 @@ internal object GridCellValues {
     fun text(value: String) = value.replace(Regex("[\\t ]+"), " ").lines()
         .map(String::trim).filter(String::isNotBlank).joinToString("\n")
     fun singleLine(value: String) = text(value).replace('\n', ' ').trim()
-    fun name(value: String): String = singleLine(value).replace(" ", "")
-        .takeIf { Regex("[가-힣]{2,6}").matches(it) && TenantResultSanitizer.validTenantName(it) }.orEmpty()
+    fun name(value: String): String = LegalEntityNames.compact(value)
+        .takeIf { (Regex("[가-힣]{2,6}").matches(it) || LegalEntityNames.normalize(it).isNotBlank()) &&
+            TenantResultSanitizer.validTenantName(it) }.orEmpty()
 
     fun identity(value: String): String {
         val joined = value.replace(Regex("(?<=[가-힣])\\s+(?=[가-힣])"), "")

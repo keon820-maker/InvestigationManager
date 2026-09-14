@@ -99,8 +99,12 @@ internal object GridFormOcr {
             for ((index, pair) in layout.tenants.withIndex()) {
                 val name = value("tenant${index + 1}.name", pair.first, GridCellValues::name)
                 val number = value("tenant${index + 1}.phone", pair.second, GridCellValues::phone)
-                if (name.isNotBlank()) tenants.put(JSONObject().put("name", name).put("phone", number))
-                else if (number.isNotBlank()) review += "tenant${index + 1}.name"
+                // A legible number belongs to this verified tenant cell even if its
+                // name needs review. Keep it available in the editor instead of losing it.
+                if (name.isNotBlank() || number.isNotBlank()) {
+                    tenants.put(JSONObject().put("name", name).put("phone", number))
+                    if (name.isBlank()) review += "tenant${index + 1}.name"
+                }
             }
             val notes = value("requestNotes", layout.notes, GridCellValues::text)
             val target = layout.fields.getValue("debtorName")
@@ -110,15 +114,16 @@ internal object GridFormOcr {
             val header = read(client, bitmap, GridFormLayout.Cell(0, 0, bitmap.width, headerBottom), inset = false)
             val requestDate = GridCellValues.date(header)
             val management = GridCellValues.management(header)
-            val footer = read(client, bitmap, GridFormLayout.Cell(0, layout.notes.bottom, bitmap.width, bitmap.height), inset = false)
-            fun footerValue(label: String): String {
-                val pattern = label.map { Regex.escape(it.toString()) }.joinToString("\\s*")
-                return Regex("$pattern\\s*[:：]?\\s*([^\\n]+)").find(footer)?.groupValues?.get(1)?.trim().orEmpty()
-            }
-            val footerPhones = footerValue("전화번호")
-            val beforeFax = footerPhones.split(Regex("팩\\s*스|(?i)fax"), limit = 2)[0]
-            val branchPhone = GridCellValues.phones(beforeFax).firstOrNull().orEmpty()
-            val branchFax = GridCellValues.phones(footerValue("팩스")).firstOrNull().orEmpty()
+            // Verified cell ownership is retained while the small footer gets its own
+            // bounded retry. Never borrow investigator or tenant contacts for this region.
+            val footerResult = GridFooterRecovery.read(bitmap, layout.notes.bottom)
+            val footer = footerResult.sourceText
+            val footerValues = footerResult.values
+            review += footerValues.review.map { when (it) {
+                "phone" -> "branchPhone"
+                "fax" -> "branchFax"
+                else -> it
+            } }
             val parsed = InvestigationCase(
                 year = requestDate.take(4).toIntOrNull() ?: LocalDate.now().year,
                 managementNo = management, requestDate = requestDate,
@@ -128,18 +133,19 @@ internal object GridFormOcr {
                 ownerResidentNo = ownerIdentity.substringAfter('(', "").substringBefore(')'),
                 ownerPhone = ownerPhone.substringBefore(" / "), ownerAddress = ownerAddress,
                 tenantsJson = tenants.toString(), requestNotes = notes,
-                branch = footerValue("농협영업점"), requester = footerValue("조사의뢰자"),
-                branchPhone = branchPhone, branchFax = branchFax
+                branch = footerValues.branch, requester = footerValues.requester,
+                branchPhone = footerValues.phone, branchFax = footerValues.fax
             )
             val required = mapOf("managementNo" to management, "requestDate" to requestDate, "debtorName" to debtor,
                 "dueDate" to due, "loanType" to loan, "propertyAddress" to propertyAddress, "ownerIdentity" to ownerIdentity,
-                "ownerAddress" to ownerAddress, "branch" to parsed.branch)
+                "ownerAddress" to ownerAddress, "branch" to parsed.branch, "requester" to parsed.requester)
             required.filterValues(String::isBlank).keys.forEach(review::add)
             return OcrService.OcrResult(
                 sourceText = (listOf(header) + raw.filterKeys { !it.endsWith(".retry") }.values + footer).joinToString("\n"),
                 rawText = buildString {
                     append("--- 실제 표 경계 OCR ---\n조사담당자 : [OCR 제외]\n")
                     raw.forEach { (key, text) -> append(key).append(" : ").append(text).append('\n') }
+                    append("footer : ").append(footer).append('\n')
                     append("검토 항목 : ").append(review.joinToString())
                 },
                 parsed = parsed, normalized = true,
@@ -154,7 +160,8 @@ internal object GridFormOcr {
         "phone" to "채무자 전화", "mobile" to "채무자 휴대폰", "dueDate" to "완료요청일",
         "investigationType" to "조사구분", "loanType" to "대출종류", "propertyType" to "물건종류",
         "propertyAddress" to "물건소재지", "ownerIdentity" to "소유자", "ownerPhone" to "소유자 연락처",
-        "ownerAddress" to "소유자 주소", "requestNotes" to "기타요청사항", "branch" to "영업점"
+        "ownerAddress" to "소유자 주소", "requestNotes" to "기타요청사항", "branch" to "영업점",
+        "requester" to "조사의뢰자", "branchPhone" to "영업점 전화", "branchFax" to "영업점 팩스"
     )[key] ?: key.replace(Regex("tenant(\\d+)\\.name"), "임차인$1 이름").replace(Regex("tenant(\\d+)\\.phone"), "임차인$1 전화")
 
     private suspend fun read(client: TextRecognizer, source: Bitmap, cell: GridFormLayout.Cell,

@@ -273,7 +273,8 @@ object SpatialRescueRepairV357 {
             else -> false
         }
     }
-    private fun validDebtor(v: String) = Regex("[가-힣]{2,6}(?:\\(\\d{6}(?:-\\*)?\\))?").matches(v) && validName(v.substringBefore('('))
+    private fun validDebtor(v: String) = OcrFieldNormalizer.validDebtor(v) &&
+        (LegalEntityNames.normalize(OcrFieldNormalizer.withoutIdentity(v)).isNotBlank() || validName(v.substringBefore('(')))
     private fun validName(v: String): Boolean {
         if (!Regex("[가-힣]{2,6}").matches(v)) return false
         val bad = listOf("완료", "요청", "전화", "번호", "조사", "비고", "소유", "연락", "주소", "영업")

@@ -67,7 +67,7 @@ object AdaptiveOcr {
         fun validDate(v: String) = Regex("20\\d{2}-\\d{2}-\\d{2}").matches(v)
         fun validPhone(v: String) = Regex("0\\d{1,2}-\\d{3,4}-\\d{4}").matches(v)
         fun validName(v: String) = Regex("[가-힣]{2,6}").matches(v)
-        fun validDebtor(v: String) = Regex("[가-힣]{2,6}(?:\\(\\d{6}(?:-\\*)?\\))?").matches(v)
+        fun validDebtor(v: String) = OcrFieldNormalizer.validDebtor(v)
         fun validAddress(v: String) = v.length >= 8 && Regex(
             "(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주|[가-힣]+시|[가-힣]+군|[가-힣]+구|[가-힣]+로|[가-힣]+길|[가-힣]+동)"
         ).containsMatchIn(v)

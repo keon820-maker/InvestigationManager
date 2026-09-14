@@ -9,10 +9,22 @@ internal object OcrFieldNormalizer {
             .replace('–', '-')
             .replace(Regex("\\s+"), " ")
             .trim()
-        val name = Regex("[가-힣]{2,6}").find(stripped)?.value.orEmpty()
+            .let { row ->
+                val nextField = Regex("전\\s*화\\s*번\\s*호|핸\\s*드\\s*폰\\s*번\\s*호|완\\s*료\\s*요\\s*청\\s*일")
+                    .find(row)?.range?.first
+                nextField?.let { row.substring(0, it).trim(' ', '|', ':', '：') } ?: row
+            }
+        // The debtor may be a corporation. A six-character person-name match used
+        // to turn a full company name into its legal prefix plus the first syllables.
+        val identityStart = Regex("\\(\\s*[0-9OoIiLl]{6}(?![0-9OoIiLl])").find(stripped)?.range?.first
+        val nameCell = identityStart?.let { stripped.substring(0, it) } ?: stripped
+        val company = LegalEntityNames.normalize(nameCell)
+        if (company.isBlank() && LegalEntityNames.hasMarker(nameCell)) return ""
+        val name = company.ifBlank { Regex("[가-힣]{2,6}").find(stripped)?.value.orEmpty() }
         if (name.isBlank()) return ""
 
-        val tail = stripped.substringAfter(name, "")
+        val tail = (if (company.isNotBlank()) identityStart?.let(stripped::substring).orEmpty()
+            else stripped.substringAfter(name, ""))
             .uppercase()
             .replace('O', '0')
             .replace('I', '1')
@@ -61,11 +73,31 @@ internal object OcrFieldNormalizer {
         val a = debtorIdentity(current)
         val b = debtorIdentity(candidate)
         val hasBirth = Regex("\\(\\d{6}")
+        val aName = withoutIdentity(a)
+        val bName = withoutIdentity(b)
+        val aIdentity = a.removePrefix(aName)
+        val bIdentity = b.removePrefix(bName)
         return when {
+            // Only extend an explicitly corporate prefix when its existing identity
+            // agrees. Never combine unrelated names or conflicting identity numbers.
+            LegalEntityNames.normalize(bName).isNotBlank() && LegalEntityNames.hasMarker(aName) &&
+                bName.startsWith(aName) && bName.length > aName.length &&
+                (aIdentity.isBlank() || aIdentity == bIdentity) -> b
+            LegalEntityNames.normalize(aName).isNotBlank() && LegalEntityNames.normalize(bName).isNotBlank() &&
+                aName.startsWith(bName) && aName.length > bName.length -> a
             hasBirth.containsMatchIn(b) && !hasBirth.containsMatchIn(a) -> b
             a.isNotBlank() -> a
             else -> b
         }
+    }
+
+    internal fun withoutIdentity(value: String): String = value
+        .replace(Regex("\\(\\d{6}(?:-\\*)?\\)$"), "")
+        .trim()
+
+    internal fun validDebtor(value: String): Boolean {
+        val normalized = debtorIdentity(value)
+        return normalized.isNotBlank() && normalized == LegalEntityNames.compact(value)
     }
 
     fun preferLoan(current: String, candidate: String): String {
