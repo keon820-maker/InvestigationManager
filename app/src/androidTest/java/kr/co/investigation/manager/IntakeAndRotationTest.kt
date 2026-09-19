@@ -415,6 +415,22 @@ class IntakeAndRotationTest {
         assertOrder(smallId,largeId)
     }
 
+    @Test fun scheduleCanCancelWithoutDeletingAndFilterCancelledCases() {
+        ui.onNodeWithTag("schedule-list").performScrollToNode(hasTestTag("schedule-case-$smallId"))
+        ui.onNodeWithTag("schedule-menu-$smallId").performClick()
+        ui.onNodeWithTag("schedule-cancel-$smallId").performClick()
+        ui.waitUntil(10_000) {
+            runBlocking { AppDb.get(context).cases().get(smallId)?.status == "의뢰취소" }
+        }
+        assertNull(runBlocking { AppDb.get(context).cases().get(smallId)!!.deletedAt })
+
+        ui.onNodeWithTag("schedule-filter-의뢰취소").performScrollTo().performClick()
+        ui.onNodeWithTag("schedule-case-$smallId").assertExists()
+        ui.onNodeWithTag("schedule-case-$largeId").assertDoesNotExist()
+        ui.onNodeWithTag("schedule-filter-전체보기").performScrollTo().performClick()
+        ui.onNodeWithTag("schedule-case-$largeId").assertExists()
+    }
+
     @Test fun existingDuplicatedNotesChangeOnlyAfterCleanupAndSave() {
         val original="검증 담당자와 통화 후 방문\n기타요청사항\n검증 담당자와 통화 후 방문\n추가 사진 확인"
         val cleaned="검증 담당자와 통화 후 방문\n추가 사진 확인"
@@ -431,5 +447,17 @@ class IntakeAndRotationTest {
         }
         ui.onNodeWithTag("detail-save").performClick()
         ui.waitUntil(10_000) { runBlocking { AppDb.get(context).cases().get(smallId)!!.requestNotes == cleaned } }
+    }
+
+    @Test fun detailDeletionAndAttachmentDeletionRequireConfirmation() {
+        openMenu("전체 데이터시트")
+        ui.onNodeWithTag("sheet-row-$largeId").performClick()
+        ui.onNodeWithText("삭제").performScrollTo().performClick()
+        ui.onNodeWithText("첨부파일 삭제").assertIsDisplayed()
+        ui.onAllNodesWithText("취소").onLast().performClick()
+        ui.onNodeWithTag("detail-delete-case").performScrollTo().performClick()
+        ui.onNodeWithText("조사건 삭제").assertIsDisplayed()
+        ui.onAllNodesWithText("취소").onLast().performClick()
+        assertNull(runBlocking { AppDb.get(context).cases().get(largeId)!!.deletedAt })
     }
 }

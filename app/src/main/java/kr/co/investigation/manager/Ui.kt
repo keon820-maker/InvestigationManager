@@ -358,6 +358,11 @@ import java.util.Locale
     val atts by vm.db.attachments().observe(c.id).collectAsStateWithLifecycle(emptyList())
     var photoError by remember{mutableStateOf("")}
     var confirmDelete by remember{mutableStateOf(false)}
+    var showNavigation by remember{mutableStateOf(false)}
+    var attachmentName by remember{mutableStateOf("")}
+    var attachmentAction by remember{mutableStateOf("")}
+    var attachmentToDelete by remember{mutableStateOf<Attachment?>(null)}
+    var attachmentDeleteError by remember{mutableStateOf("")}
     var chooseDefaultAddress by androidx.compose.runtime.saveable.rememberSaveable{mutableStateOf(false)}
     var showInvestigatorProfile by remember{mutableStateOf(!profile.isConfigured)}
     val photos = rememberDocumentPhotoActions(c.year,
@@ -367,16 +372,42 @@ import java.util.Locale
             val appContext = ctx.applicationContext
             vm.viewModelScope.launch {
                 try {
-                    val saved = if (file != null) OriginalFileStore.finalizeCamera(file, caseId, "CONFIRMATION")
-                    else OriginalFileStore.copyOriginal(appContext, uri, caseId, caseYear, "CONFIRMATION")
-                    vm.addAttachment(saved.attachment)
+                    val saved = if (file != null) OriginalFileStore.finalizeCamera(file, caseId, "OTHER")
+                    else OriginalFileStore.copyOriginal(appContext, uri, caseId, caseYear, "OTHER")
+                    vm.addAttachment(saved.attachment.copy(originalName=namedAttachmentFile(attachmentName,saved.attachment.originalName)))
                     photoError = ""
+                    attachmentName = ""
                 } catch (error: Exception) {
                     if (error is kotlinx.coroutines.CancellationException) throw error
                     photoError = "사진을 저장하지 못했습니다. 다시 선택해주세요."
                 }
             }
         }, onError = { photoError = it })
+    if(showNavigation) NavigationFlowDialogV29(c=c,onDismiss={showNavigation=false})
+    if(attachmentAction.isNotBlank()) AlertDialog(
+        onDismissRequest={attachmentAction=""},
+        title={Text("기타 자료 이름")},
+        text={OutlinedTextField(attachmentName,{attachmentName=it.take(60)},label={Text("자료 이름")},singleLine=true,modifier=Modifier.fillMaxWidth())},
+        confirmButton={Button(enabled=attachmentName.trim().isNotBlank(),onClick={
+            val action=attachmentAction
+            attachmentAction=""
+            if(action=="camera") photos.takePhoto() else photos.choosePhoto()
+        }){Text("계속")}},
+        dismissButton={TextButton(onClick={attachmentAction="";attachmentName=""}){Text("취소")}}
+    )
+    attachmentToDelete?.let { att -> AlertDialog(
+        onDismissRequest={attachmentToDelete=null},
+        title={Text("첨부파일 삭제")},
+        text={Text("${att.originalName}을(를) 삭제하시겠습니까?\n삭제한 첨부파일은 복구할 수 없습니다.")},
+        confirmButton={Button(onClick={
+            attachmentToDelete=null
+            scope.launch {
+                try { vm.deleteAttachment(att); attachmentDeleteError="" }
+                catch(e:Exception) { attachmentDeleteError=e.message ?: "첨부파일을 삭제하지 못했습니다." }
+            }
+        }){Text("삭제")}},
+        dismissButton={TextButton(onClick={attachmentToDelete=null}){Text("취소")}}
+    ) }
     if(showInvestigatorProfile) InvestigatorProfileDialog(
         initial=profile,
         onDismiss={showInvestigatorProfile=false},
@@ -407,7 +438,10 @@ import java.util.Locale
         }
     )
     Scaffold(
-        topBar={TopAppBar(title={Text(c.managementNo.ifBlank{"상세정보"})},navigationIcon={TextButton(onClick=onBack){Text("뒤로")}},actions={TextButton(onClick=onForm){Text("조사의뢰서")}})},
+        topBar={TopAppBar(title={Text(c.managementNo.ifBlank{"상세정보"})},navigationIcon={TextButton(onClick=onBack){Text("뒤로")}},actions={
+            TextButton(onClick=onForm){Text("조사의뢰서")}
+            TextButton(onClick={showNavigation=true},enabled=c.defaultAddress().isNotBlank()){Text("길안내")}
+        })},
         bottomBar={
             Surface(tonalElevation=3.dp){
                 Column(
@@ -447,10 +481,11 @@ import java.util.Locale
             EditFields(c,fixedInvestigator=true){c=profile.applyTo(it);vm.clearDetailSaveFeedback(c.id)}
             OutlinedTextField(c.investigationMemo,{c=c.copy(investigationMemo=it);vm.clearDetailSaveFeedback(c.id)},label={Text("조사 비고")},minLines=4,modifier=Modifier.fillMaxWidth())
             Column(Modifier.fillMaxWidth().padding(vertical=10.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
-                Button(onClick=photos.choosePhoto,modifier=Modifier.fillMaxWidth()){Text("조사확인서 첨부")}
-                OutlinedButton(onClick=photos.takePhoto,modifier=Modifier.fillMaxWidth()){Text("카메라 촬영")}
+                Button(onClick={attachmentAction="gallery"},modifier=Modifier.fillMaxWidth()){Text("기타 자료 첨부")}
+                OutlinedButton(onClick={attachmentAction="camera"},modifier=Modifier.fillMaxWidth()){Text("카메라 촬영")}
             }
             if(photoError.isNotBlank()) Text(photoError,color=MaterialTheme.colorScheme.error)
+            if(attachmentDeleteError.isNotBlank()) Text(attachmentDeleteError,color=MaterialTheme.colorScheme.error)
             Text("첨부 원본 ${atts.size}개",style=MaterialTheme.typography.titleMedium)
             Text("항목을 누르면 저장된 원본을 확대해서 확인할 수 있습니다.",style=MaterialTheme.typography.bodySmall)
             atts.forEach{att->
@@ -466,6 +501,7 @@ import java.util.Locale
                                 when(att.type){
                                     "ORIGINAL_REQUEST"->"원본 조사의뢰서"
                                     "CONFIRMATION"->"조사확인서 원본"
+                                    "OTHER"->att.originalName.substringBeforeLast('.').ifBlank{"기타 자료"}
                                     else->"첨부 원본"
                                 },
                                 style=MaterialTheme.typography.titleSmall
@@ -474,15 +510,24 @@ import java.util.Locale
                             Text("SHA-256 ${att.sha256.take(24)}…",style=MaterialTheme.typography.bodySmall)
                         }
                         TextButton(onClick={onAttachment(att)}){Text("원본 보기")}
+                        TextButton(onClick={attachmentToDelete=att}){Text("삭제")}
                     }
                 }
             }
             Spacer(Modifier.height(24.dp))
             HorizontalDivider()
             Spacer(Modifier.height(16.dp))
-            OutlinedButton(onClick={confirmDelete=true},modifier=Modifier.fillMaxWidth()){Text("이 조사건 삭제")}
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End){
+                TextButton(onClick={confirmDelete=true},modifier=Modifier.testTag("detail-delete-case")){Text("이 조사건 삭제",color=MaterialTheme.colorScheme.error)}
+            }
         }
     }
+}
+
+internal fun namedAttachmentFile(label:String,storedName:String):String {
+    val clean=label.trim().replace(Regex("[\\/:*?\"<>|]"),"_").take(60).ifBlank{"기타 자료"}
+    val ext=storedName.substringAfterLast('.',"").lowercase().filter{it.isLetterOrDigit()}.take(10)
+    return if(ext.isBlank()) clean else "$clean.$ext"
 }
 
 @Composable fun RequestFormScreen(c:InvestigationCase,onBack:()->Unit){

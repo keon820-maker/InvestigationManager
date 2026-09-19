@@ -104,6 +104,7 @@ interface AttachmentDao {
     @Insert suspend fun insert(value:Attachment):Long
     @Update suspend fun update(value:Attachment)
     @Update suspend fun updateAll(values:List<Attachment>)
+    @Delete suspend fun delete(value:Attachment)
     @Query("DELETE FROM attachments WHERE caseId IN (:caseIds)") suspend fun deleteForCases(caseIds:List<Long>)
     @Query("DELETE FROM attachments WHERE caseId=:caseId") suspend fun deleteForCase(caseId:Long)
 }

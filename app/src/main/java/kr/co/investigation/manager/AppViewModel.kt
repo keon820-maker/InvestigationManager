@@ -21,6 +21,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.time.LocalDate
 import java.util.UUID
+import java.io.File
 
 class AppViewModel(
     app:Application,
@@ -294,6 +295,25 @@ class AppViewModel(
         }
         scheduleSync()
         return id
+    }
+
+    suspend fun deleteAttachment(value: Attachment) {
+        val current = db.attachments().getForCase(value.caseId).firstOrNull { it.id == value.id } ?: return
+        val parent = db.cases().get(current.caseId)
+        if (current.remotePath.isNotBlank() || current.uploadedAt != null) {
+            val user = firebaseAuth?.currentUser ?: error("동기화된 첨부파일은 Google 로그인 후 삭제할 수 있습니다.")
+            val caseCloudId = parent?.cloudId.orEmpty()
+            check(caseCloudId.isNotBlank()) { "조사건 동기화 정보를 찾을 수 없습니다." }
+            syncRepository?.deleteAttachment(user.uid, caseCloudId, current)
+                ?: error("첨부파일 동기화 삭제를 사용할 수 없습니다.")
+        }
+        db.attachments().delete(current)
+        runCatching { File(current.localPath).delete() }
+        parent?.let {
+            db.cases().update(it.copy(updatedAt = System.currentTimeMillis(),
+                modifiedByDevice = syncIdentity.deviceId, lastSyncedAt = null))
+        }
+        scheduleSync()
     }
 
     suspend fun deleteCase(c: InvestigationCase) = deleteCases(setOf(c.id))

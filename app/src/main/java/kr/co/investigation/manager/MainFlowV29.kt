@@ -39,7 +39,6 @@ import kr.co.investigation.manager.data.InvestigationCase
 import kr.co.investigation.manager.ocr.OcrService
 import kr.co.investigation.manager.storage.OriginalFileStore
 import java.io.File
-import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
@@ -213,8 +212,7 @@ private fun MainScreenV29(
     val selected by vm.selected.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf("") }
     var mobileTab by rememberSaveable { mutableIntStateOf(0) }
-    var showCompleted by rememberSaveable { mutableStateOf(false) }
-    var quickFilter by rememberSaveable { mutableStateOf(FILTER_TODAY_V29) }
+    var quickFilter by rememberSaveable { mutableStateOf(FILTER_ALL_V29) }
     var periodStart by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }
     var periodEnd by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }
     var showPeriodPicker by remember { mutableStateOf(false) }
@@ -238,23 +236,16 @@ private fun MainScreenV29(
     val splitLayout = configuration.screenWidthDp >= 960 && configuration.screenHeightDp >= 600
     val todayDate = LocalDate.now()
     val today = todayDate.toString()
-    val tomorrow = todayDate.plusDays(1).toString()
-    val weekStart = todayDate.minusDays((todayDate.dayOfWeek.value - DayOfWeek.MONDAY.value).toLong())
-    val weekEnd = weekStart.plusDays(6)
 
     if (showPeriodPicker) {
         SchedulePeriodDialogV33(
             initialStart = when (quickFilter) {
                 FILTER_TODAY_V29 -> today
-                FILTER_TOMORROW_V29 -> tomorrow
-                FILTER_WEEK_V29 -> weekStart.toString()
                 FILTER_PERIOD_V29 -> periodStart
                 else -> today
             },
             initialEnd = when (quickFilter) {
                 FILTER_TODAY_V29 -> today
-                FILTER_TOMORROW_V29 -> tomorrow
-                FILTER_WEEK_V29 -> weekEnd.toString()
                 FILTER_PERIOD_V29 -> periodEnd
                 else -> today
             },
@@ -282,14 +273,15 @@ private fun MainScreenV29(
             ).any { it.contains(query, true) }
         }
     }
-    val quickFiltered = remember(searched, quickFilter, today, tomorrow, weekStart, weekEnd, periodStart, periodEnd) {
+    val quickFiltered = remember(searched, quickFilter, today, periodStart, periodEnd) {
         searched.filter { c ->
             when (quickFilter) {
+                FILTER_ALL_V29 -> true
                 FILTER_TODAY_V29 -> c.plannedDate == today
-                FILTER_TOMORROW_V29 -> c.plannedDate == tomorrow
-                FILTER_WEEK_V29 -> c.plannedDate.toDateV29()?.let { !it.isBefore(weekStart) && !it.isAfter(weekEnd) } == true
-                FILTER_UNASSIGNED_V29 -> c.plannedDate.isBlank()
-                FILTER_DELAYED_V29 -> caseWarningsV29(c, todayDate).any { it.contains("초과") || it.contains("지남") }
+                FILTER_IN_PROGRESS_V29 -> c.status.normalizedStatusV29() == STATUS_IN_PROGRESS_V29
+                FILTER_DELAYED_V29 -> c.status.normalizedStatusV29() !in setOf(STATUS_DONE_V29, STATUS_CANCELLED_V29) && caseWarningsV29(c, todayDate).any { it.contains("초과") || it.contains("지남") }
+                FILTER_CANCELLED_V29 -> c.status.normalizedStatusV29() == STATUS_CANCELLED_V29
+                FILTER_DONE_V29 -> c.status.normalizedStatusV29() == STATUS_DONE_V29
                 else -> c.plannedDate.toDateV29()?.let { date ->
                     val start = periodStart.toDateV29() ?: todayDate
                     val end = periodEnd.toDateV29() ?: start
@@ -298,21 +290,21 @@ private fun MainScreenV29(
             }
         }
     }
-    val listItems = remember(quickFiltered, showCompleted) {
-        quickFiltered.filter { showCompleted || it.status.normalizedStatusV29() != STATUS_DONE_V29 }
-    }
+    val listItems = quickFiltered
     val mapItems = remember(quickFiltered) {
         quickFiltered.filter { it.status.normalizedStatusV29() == STATUS_IN_PROGRESS_V29 }
     }
 
-    val todayCount = cases.count { it.plannedDate == today && it.status.normalizedStatusV29() != STATUS_DONE_V29 }
+    val inactiveStatuses = setOf(STATUS_DONE_V29, STATUS_CANCELLED_V29)
+    val todayCount = cases.count { it.plannedDate == today && it.status.normalizedStatusV29() !in inactiveStatuses }
     val newCount = cases.count { it.status.normalizedStatusV29() == STATUS_NEW_V29 }
     val progressCount = cases.count { it.status.normalizedStatusV29() == STATUS_IN_PROGRESS_V29 }
     val completedCount = cases.count { it.status.normalizedStatusV29() == STATUS_DONE_V29 }
+    val cancelledCount = cases.count { it.status.normalizedStatusV29() == STATUS_CANCELLED_V29 }
     val delayedCount = cases.count { c ->
-        c.status.normalizedStatusV29() != STATUS_DONE_V29 && caseWarningsV29(c, todayDate).any { it.contains("초과") || it.contains("지남") }
+        c.status.normalizedStatusV29() !in inactiveStatuses && caseWarningsV29(c, todayDate).any { it.contains("초과") || it.contains("지남") }
     }
-    val unassignedCount = cases.count { it.plannedDate.isBlank() && it.status.normalizedStatusV29() != STATUS_DONE_V29 }
+    val unassignedCount = cases.count { it.plannedDate.isBlank() && it.status.normalizedStatusV29() !in inactiveStatuses }
 
     Scaffold(
         topBar = {
@@ -382,9 +374,7 @@ private fun MainScreenV29(
                     onPeriod = { showPeriodPicker = true },
                     sort = scheduleSort,
                     onSort = { scheduleSortName = it.name },
-                    counts = SummaryCountsV29(todayCount, progressCount, delayedCount, unassignedCount, newCount, completedCount),
-                    showCompleted = showCompleted,
-                    onToggleCompleted = { showCompleted = !showCompleted },
+                    counts = SummaryCountsV29(todayCount, progressCount, delayedCount, unassignedCount, newCount, cancelledCount, completedCount),
                     onLocate = { vm.select(it); if (!wide) mobileTab = 1 },
                     onEdit = onEdit,
                     onForm = onForm,
@@ -394,6 +384,7 @@ private fun MainScreenV29(
                         when (status) {
                             STATUS_IN_PROGRESS_V29 -> vm.startInvestigation(c)
                             STATUS_DONE_V29 -> vm.completeInvestigation(c)
+                            STATUS_CANCELLED_V29 -> vm.update(c.copy(status = STATUS_CANCELLED_V29, startedAt = null, completedAt = null))
                             else -> vm.update(c.copy(status = STATUS_NEW_V29, startedAt = null, completedAt = null))
                         }
                     },
@@ -432,6 +423,7 @@ private data class SummaryCountsV29(
     val delayed: Int,
     val unassigned: Int,
     val fresh: Int,
+    val cancelled: Int,
     val done: Int
 )
 
@@ -447,8 +439,6 @@ private fun SchedulePaneV29(
     sort: ScheduleSort,
     onSort: (ScheduleSort) -> Unit,
     counts: SummaryCountsV29,
-    showCompleted: Boolean,
-    onToggleCompleted: () -> Unit,
     onLocate: (InvestigationCase) -> Unit,
     onEdit: (InvestigationCase) -> Unit,
     onForm: (InvestigationCase) -> Unit,
@@ -515,7 +505,6 @@ private fun SchedulePaneV29(
                         }
                     }
                 }
-                FilterChip(selected = showCompleted, onClick = onToggleCompleted, label = { Text(if (showCompleted) "완료 숨기기" else "완료 ${counts.done}") })
             }
             Text("같은 예정일 안에서 정렬 · 지도는 진행중만 표시", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -548,6 +537,7 @@ private fun SchedulePaneV29(
                             onForm = { menuCaseId = null; onForm(c) },
                             onEdit = { menuCaseId = null; onEdit(c) },
                             onStatus = { menuCaseId = null; statusCase = c },
+                            onCancel = { menuCaseId = null; onStatus(c, STATUS_CANCELLED_V29) },
                             onSchedule = { menuCaseId = null; scheduleCase = c },
                             onStatusChip = { statusCase = c },
                             onNavigate = { onNavigate(c) },
@@ -570,6 +560,7 @@ private fun SummaryRowV29(c: SummaryCountsV29) {
             "지연" to c.delayed,
             "미지정" to c.unassigned,
             "신규" to c.fresh,
+            "의뢰취소" to c.cancelled,
             "완료" to c.done
         ).forEach { (label, count) ->
             Surface(
@@ -588,8 +579,13 @@ private fun SummaryRowV29(c: SummaryCountsV29) {
 @Composable
 private fun QuickFiltersV29(value: String, onChange: (String) -> Unit) {
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-        listOf(FILTER_TODAY_V29, FILTER_TOMORROW_V29, FILTER_WEEK_V29, FILTER_UNASSIGNED_V29, FILTER_DELAYED_V29).forEach {
-            FilterChip(selected = value == it, onClick = { onChange(it) }, label = { Text(it) })
+        listOf(FILTER_ALL_V29, FILTER_TODAY_V29, FILTER_IN_PROGRESS_V29, FILTER_DELAYED_V29, FILTER_CANCELLED_V29, FILTER_DONE_V29).forEach {
+            FilterChip(
+                selected = value == it,
+                onClick = { onChange(it) },
+                label = { Text(it) },
+                modifier = Modifier.testTag("schedule-filter-$it")
+            )
         }
     }
 }
@@ -619,6 +615,7 @@ private fun CaseCardV29(
     onForm: () -> Unit,
     onEdit: () -> Unit,
     onStatus: () -> Unit,
+    onCancel: () -> Unit,
     onSchedule: () -> Unit,
     onStatusChip: () -> Unit,
     onNavigate: () -> Unit,
@@ -639,11 +636,12 @@ private fun CaseCardV29(
                 }
                 AssistChip(onClick = onStatusChip, label = { Text(status) })
                 Box {
-                    TextButton(onClick = onMenu, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("⋮", style = MaterialTheme.typography.titleLarge) }
+                    TextButton(onClick = onMenu, contentPadding = PaddingValues(horizontal = 8.dp), modifier = Modifier.testTag("schedule-menu-${c.id}")) { Text("⋮", style = MaterialTheme.typography.titleLarge) }
                     DropdownMenu(expanded = menuExpanded, onDismissRequest = onDismissMenu) {
                         DropdownMenuItem(text = { Text("상세 / 편집") }, onClick = onEdit)
                         DropdownMenuItem(text = { Text("조사의뢰서 보기") }, onClick = onForm)
                         DropdownMenuItem(text = { Text("진행도 변경") }, onClick = onStatus)
+                        DropdownMenuItem(text = { Text("의뢰취소") }, onClick = onCancel, modifier = Modifier.testTag("schedule-cancel-${c.id}"))
                         DropdownMenuItem(text = { Text("조사 예정일 변경") }, onClick = onSchedule)
                         DropdownMenuItem(text = { Text(if (hasMarker) "지도에서 보기" else "지도 표시 불가") }, enabled = hasMarker, onClick = onLocate)
                     }
@@ -698,7 +696,7 @@ private fun WarningPillV29(text: String) {
 }
 
 @Composable
-private fun NavigationFlowDialogV29(c: InvestigationCase, onDismiss: () -> Unit) {
+internal fun NavigationFlowDialogV29(c: InvestigationCase, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var target by remember(c.id) { mutableStateOf<NavigationTargetV29?>(null) }
@@ -896,7 +894,7 @@ private fun CalendarScreenV29(vm: AppViewModel, onBack: () -> Unit, onOpen: (Inv
                                 Column(Modifier.weight(1f)) {
                                     Text(c.managementNo.ifBlank { c.debtorName.ifBlank { "조사건" } }, fontWeight = FontWeight.SemiBold)
                                     if (c.debtorName.isNotBlank()) Text(c.debtorName, style = MaterialTheme.typography.bodySmall)
-                                    Text(c.propertyAddress, style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    Text("${c.defaultAddressLabel()} · ${c.defaultAddress()}", style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 }
                                 AssistChip(onClick = {}, label = { Text(c.status.normalizedStatusV29()) })
                             }
@@ -928,8 +926,9 @@ private fun CalendarGridV29(
                     val day = cell - offset + 1
                     val date = if (day in 1..month.lengthOfMonth()) month.atDay(day) else null
                     val cases = date?.let { byDate[it.toString()] }.orEmpty()
-                    val active = cases.count { it.status.normalizedStatusV29() != STATUS_DONE_V29 }
-                    val done = cases.size - active
+                    val active = cases.count { it.status.normalizedStatusV29() !in setOf(STATUS_DONE_V29, STATUS_CANCELLED_V29) }
+                    val done = cases.count { it.status.normalizedStatusV29() == STATUS_DONE_V29 }
+                    val cancelled = cases.count { it.status.normalizedStatusV29() == STATUS_CANCELLED_V29 }
                     Surface(
                         modifier = Modifier.weight(1f).height(76.dp).clickable(enabled = date != null) { if (date != null) onSelect(date) },
                         shape = RoundedCornerShape(12.dp),
@@ -945,6 +944,7 @@ private fun CalendarGridV29(
                                 Spacer(Modifier.weight(1f))
                                 if (active > 0) Text("진행 $active", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                                 if (done > 0) Text("완료 $done", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                if (cancelled > 0) Text("취소 $cancelled", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -1265,11 +1265,12 @@ private fun schedulePeriodLabelV33(
     periodEnd: String,
     today: LocalDate
 ): String = when (filter) {
+    FILTER_ALL_V29 -> "전체보기"
     FILTER_TODAY_V29 -> displayDateV29(today.toString())
-    FILTER_TOMORROW_V29 -> displayDateV29(today.plusDays(1).toString())
-    FILTER_WEEK_V29 -> "이번주"
-    FILTER_UNASSIGNED_V29 -> "미지정"
+    FILTER_IN_PROGRESS_V29 -> "진행중"
     FILTER_DELAYED_V29 -> "지연"
+    FILTER_CANCELLED_V29 -> "의뢰취소"
+    FILTER_DONE_V29 -> "완료"
     else -> if (periodStart == periodEnd) displayDateV29(periodStart)
     else "${displayDateV29(periodStart)} ~ ${displayDateV29(periodEnd)}"
 }
@@ -1285,7 +1286,7 @@ private fun ocrWarningsV29(c: InvestigationCase): List<String> = buildList {
 }
 
 private fun caseWarningsV29(c: InvestigationCase, today: LocalDate): List<String> = buildList {
-    if (c.status.normalizedStatusV29() == STATUS_DONE_V29) return@buildList
+    if (c.status.normalizedStatusV29() in setOf(STATUS_DONE_V29, STATUS_CANCELLED_V29)) return@buildList
     val planned = c.plannedDate.toDateV29()
     val due = c.dueDate.toDateV29()
     if (c.plannedDate.isBlank()) add("예정일 미지정")
@@ -1301,14 +1302,16 @@ private fun caseWarningsV29(c: InvestigationCase, today: LocalDate): List<String
 
 private const val STATUS_NEW_V29 = "신규"
 private const val STATUS_IN_PROGRESS_V29 = "진행중"
+private const val STATUS_CANCELLED_V29 = "의뢰취소"
 private const val STATUS_DONE_V29 = "완료"
-private val STATUS_VALUES_V29 = listOf(STATUS_NEW_V29, STATUS_IN_PROGRESS_V29, STATUS_DONE_V29)
+private val STATUS_VALUES_V29 = listOf(STATUS_NEW_V29, STATUS_IN_PROGRESS_V29, STATUS_CANCELLED_V29, STATUS_DONE_V29)
 private const val FILTER_PERIOD_V29 = "조회기간"
+private const val FILTER_ALL_V29 = "전체보기"
 private const val FILTER_TODAY_V29 = "오늘"
-private const val FILTER_TOMORROW_V29 = "내일"
-private const val FILTER_WEEK_V29 = "이번주"
-private const val FILTER_UNASSIGNED_V29 = "미지정"
+private const val FILTER_IN_PROGRESS_V29 = "진행중"
 private const val FILTER_DELAYED_V29 = "지연"
+private const val FILTER_CANCELLED_V29 = "의뢰취소"
+private const val FILTER_DONE_V29 = "완료"
 private const val NO_DATE_V29 = "__NO_DATE_V29__"
 private const val MAP_SIZE_SMALL_V31 = 0
 private const val MAP_SIZE_NORMAL_V31 = 1
@@ -1319,6 +1322,7 @@ private val timestampFormatterV29 = DateTimeFormatter.ofPattern("M/d HH:mm", Loc
 
 private fun String.normalizedStatusV29(): String = when (trim()) {
     STATUS_IN_PROGRESS_V29 -> STATUS_IN_PROGRESS_V29
+    STATUS_CANCELLED_V29 -> STATUS_CANCELLED_V29
     STATUS_DONE_V29 -> STATUS_DONE_V29
     else -> STATUS_NEW_V29
 }
@@ -1326,7 +1330,8 @@ private fun String.normalizedStatusV29(): String = when (trim()) {
 private fun statusOrderV29(value: String): Int = when (value.normalizedStatusV29()) {
     STATUS_NEW_V29 -> 0
     STATUS_IN_PROGRESS_V29 -> 1
-    else -> 2
+    STATUS_CANCELLED_V29 -> 2
+    else -> 3
 }
 
 private fun String.toDateV29(): LocalDate? = runCatching { LocalDate.parse(this) }.getOrNull()
