@@ -180,7 +180,7 @@ private fun UsageGuideDialogV29(onClose: () -> Unit) {
                 Text("문서 → 일정 → 지도/내비 순서로 사용합니다.", fontWeight = FontWeight.SemiBold)
                 Text("1. 신규 등록에서 기존 사진을 선택하거나 카메라로 조사의뢰서를 촬영합니다.")
                 Text("2. OCR 결과를 확인하고 조사 예정일과 진행도를 지정합니다.")
-                Text("3. 일정 화면에서 날짜 기준과 진행상황 기준 필터를 각각 선택해 원하는 조사건만 빠르게 좁힐 수 있습니다.")
+                Text("3. 일정 화면에서 날짜 기준과 진행상황 기준 필터를 각각 선택해 원하는 조사건만 빠르게 좁힐 수 있고, 필터 초기화로 한 번에 전체보기로 돌아갈 수 있습니다.")
                 Text("4. 진행중 건은 카카오맵에 표시되며 마커의 간단정보로 대상을 구분할 수 있습니다.")
                 Text("5. 편집 화면의 주소지 변경에서 지도 표시 위치를 지정합니다. 직접입력 주소는 조사의뢰서에도 표시됩니다.")
                 Text("6. 전화는 임차인·물건 소유자·채무자 중 저장된 번호를 선택합니다.")
@@ -493,6 +493,9 @@ private fun SchedulePaneV29(
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.fillMaxWidth()
             )
+            val hasActiveFilters = query.isNotBlank() ||
+                dateFilter != FILTER_ALL_V29 ||
+                statusFilter != FILTER_ALL_V29
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) {
                     TextButton(onClick = { sortMenu = true }, modifier = Modifier.testTag("schedule-sort")) {
@@ -507,6 +510,17 @@ private fun SchedulePaneV29(
                             )
                         }
                     }
+                }
+                TextButton(
+                    onClick = {
+                        onQuery("")
+                        onDateFilter(FILTER_ALL_V29)
+                        onStatusFilter(FILTER_ALL_V29)
+                    },
+                    enabled = hasActiveFilters,
+                    modifier = Modifier.testTag("schedule-filter-reset")
+                ) {
+                    Text("필터 초기화")
                 }
             }
             Text("같은 예정일 안에서 정렬 · 지도는 진행중만 표시", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
