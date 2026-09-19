@@ -33,7 +33,7 @@ import kr.co.investigation.manager.data.InvestigationCase
 /**
  * v0.32 카카오맵
  * - 진행중 조사건만 표시
- * - 모든 마커 위에 방문순서/채무자/관리번호를 상시 표시
+ * - 모든 마커 위에 채무자/관리번호를 상시 표시
  * - 마커를 누르면 상위 화면의 길안내 선택창을 연다.
  * - Fold/태블릿 창 크기 변경 시 지도 영역 안에서 다시 맞춘다.
  */
@@ -59,7 +59,6 @@ fun NativeMapPaneV29(
             it.status == "진행중" && it.propertyLatitude != null && it.propertyLongitude != null
         }.sortedWith(
             compareBy<InvestigationCase> { it.plannedDate }
-                .thenBy { if (it.routeOrder > 0) it.routeOrder else Int.MAX_VALUE }
                 .thenBy { it.id }
         )
     }
@@ -158,7 +157,7 @@ fun NativeMapPaneV29(
             it.status == "진행중" && it.propertyLatitude != null && it.propertyLongitude != null
         }
         val newViewportKey = buildString {
-            append(points.joinToString("|") { "${it.id}:${it.routeOrder}:${it.propertyLatitude}:${it.propertyLongitude}" })
+            append(points.joinToString("|") { "${it.id}:${it.propertyLatitude}:${it.propertyLongitude}" })
             append("#sel=").append(selectedPoint?.id ?: 0)
             append("#size=").append(mapSizeLevel ?: -1)
         }
@@ -311,10 +310,7 @@ private fun caseInfoMarkerBitmapV32(c: InvestigationCase, selected: Boolean): Bi
     canvas.drawCircle(width / 2f, 116f, 28f, pinPaint)
     canvas.drawCircle(width / 2f, 116f, 28f, pinStroke)
 
-    val firstLine = buildString {
-        if (c.routeOrder > 0) append("${c.routeOrder} · ")
-        append(c.debtorName.ifBlank { "조사건" })
-    }.take(18)
+    val firstLine = c.debtorName.ifBlank { "조사건" }.take(18)
     val secondLine = c.managementNo.ifBlank { shortAddressV32(c.defaultAddress()) }.take(28)
 
     val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -338,7 +334,7 @@ private fun caseInfoMarkerBitmapV32(c: InvestigationCase, selected: Boolean): Bi
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         textSize = 26f
     }
-    val pinText = if (c.routeOrder > 0) c.routeOrder.toString() else "•"
+    val pinText = "•"
     val baseline = 116f - (orderPaint.ascent() + orderPaint.descent()) / 2f
     canvas.drawText(pinText, width / 2f, baseline, orderPaint)
 
