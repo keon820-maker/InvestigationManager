@@ -586,10 +586,7 @@ private fun DateFiltersV36(
             FilterChip(
                 selected = value == filter,
                 onClick = { onChange(filter) },
-                label = {
-                    val label = if (filter == FILTER_ALL_V29) "전체" else filter
-                    Text("$label ${counts[filter] ?: 0}")
-                },
+                label = { Text(if (filter == FILTER_ALL_V29) "전체" else filter) },
                 modifier = Modifier.testTag("schedule-date-filter-$filter")
             )
         }
@@ -628,7 +625,10 @@ private fun StatusFiltersV36(
             FilterChip(
                 selected = value == filter,
                 onClick = { onChange(filter) },
-                label = { Text(if (filter == FILTER_ALL_V29) "전체" else filter) },
+                label = {
+                    val label = if (filter == FILTER_ALL_V29) "전체" else filter
+                    Text("$label ${counts[filter] ?: 0}")
+                },
                 modifier = Modifier.testTag("schedule-status-filter-$filter")
             )
         }
