@@ -257,6 +257,9 @@ private fun MainScreenV29(
                 periodStart = start
                 periodEnd = end
                 dateFilter = FILTER_PERIOD_V29
+                // 새 기간 조회는 전체 진행상황에서 시작한다.
+                // 이후 사용자가 진행중/지연/완료 등을 눌러 다시 좁힐 수 있다.
+                statusFilter = FILTER_ALL_V29
                 showPeriodPicker = false
             }
         )
@@ -299,19 +302,11 @@ private fun MainScreenV29(
             }
         }
     }
+    val statusCounts = remember(dateFiltered, todayDate) {
+        scheduleStatusCountsV36(dateFiltered, todayDate)
+    }
     val statusFiltered = remember(dateFiltered, statusFilter, todayDate) {
-        dateFiltered.filter { c ->
-            when (statusFilter) {
-                FILTER_ALL_V29 -> true
-                FILTER_NEW_V36 -> c.status.normalizedStatusV29() == STATUS_NEW_V29
-                FILTER_IN_PROGRESS_V29 -> c.status.normalizedStatusV29() == STATUS_IN_PROGRESS_V29
-                FILTER_DELAYED_V29 -> c.status.normalizedStatusV29() !in setOf(STATUS_DONE_V29, STATUS_CANCELLED_V29) &&
-                    caseWarningsV29(c, todayDate).any { it.contains("초과") || it.contains("지남") }
-                FILTER_CANCELLED_V29 -> c.status.normalizedStatusV29() == STATUS_CANCELLED_V29
-                FILTER_DONE_V29 -> c.status.normalizedStatusV29() == STATUS_DONE_V29
-                else -> true
-            }
-        }
+        dateFiltered.filter { c -> scheduleMatchesStatusV36(c, statusFilter, todayDate) }
     }
     val listItems = statusFiltered
     val mapItems = remember(statusFiltered) {
@@ -384,6 +379,7 @@ private fun MainScreenV29(
                     onDateFilter = { dateFilter = it },
                     statusFilter = statusFilter,
                     onStatusFilter = { statusFilter = it },
+                    statusCounts = statusCounts,
                     periodLabel = schedulePeriodLabelV36(dateFilter, periodStart, periodEnd, todayDate),
                     onPeriod = { showPeriodPicker = true },
                     sort = scheduleSort,
@@ -439,6 +435,7 @@ private fun SchedulePaneV29(
     onDateFilter: (String) -> Unit,
     statusFilter: String,
     onStatusFilter: (String) -> Unit,
+    statusCounts: Map<String, Int>,
     periodLabel: String,
     onPeriod: () -> Unit,
     sort: ScheduleSort,
@@ -483,7 +480,7 @@ private fun SchedulePaneV29(
             Spacer(Modifier.height(9.dp))
             Text("진행상황 기준", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(5.dp))
-            StatusFiltersV36(statusFilter, onStatusFilter)
+            StatusFiltersV36(statusFilter, statusCounts, onStatusFilter)
             Spacer(Modifier.height(10.dp))
             OutlinedTextField(
                 value = query,
@@ -589,7 +586,10 @@ private fun DateFiltersV36(
             FilterChip(
                 selected = value == filter,
                 onClick = { onChange(filter) },
-                label = { Text(if (filter == FILTER_ALL_V29) "전체" else filter) },
+                label = {
+                    val label = if (filter == FILTER_ALL_V29) "전체" else filter
+                    Text("$label ${counts[filter] ?: 0}")
+                },
                 modifier = Modifier.testTag("schedule-date-filter-$filter")
             )
         }
@@ -608,7 +608,11 @@ private fun DateFiltersV36(
 }
 
 @Composable
-private fun StatusFiltersV36(value: String, onChange: (String) -> Unit) {
+private fun StatusFiltersV36(
+    value: String,
+    counts: Map<String, Int>,
+    onChange: (String) -> Unit
+) {
     Row(
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(7.dp)
@@ -1313,6 +1317,35 @@ private fun schedulePeriodLabelV36(
     FILTER_UNASSIGNED_V36 -> "미지정"
     else -> if (periodStart == periodEnd) displayDateV29(periodStart)
     else "${displayDateV29(periodStart)} ~ ${displayDateV29(periodEnd)}"
+}
+
+internal fun scheduleMatchesStatusV36(
+    c: InvestigationCase,
+    filter: String,
+    today: LocalDate
+): Boolean = when (filter) {
+    FILTER_ALL_V29 -> true
+    FILTER_NEW_V36 -> c.status.normalizedStatusV29() == STATUS_NEW_V29
+    FILTER_IN_PROGRESS_V29 -> c.status.normalizedStatusV29() == STATUS_IN_PROGRESS_V29
+    FILTER_DELAYED_V29 -> c.status.normalizedStatusV29() !in setOf(STATUS_DONE_V29, STATUS_CANCELLED_V29) &&
+        caseWarningsV29(c, today).any { it.contains("초과") || it.contains("지남") }
+    FILTER_CANCELLED_V29 -> c.status.normalizedStatusV29() == STATUS_CANCELLED_V29
+    FILTER_DONE_V29 -> c.status.normalizedStatusV29() == STATUS_DONE_V29
+    else -> true
+}
+
+internal fun scheduleStatusCountsV36(
+    rows: List<InvestigationCase>,
+    today: LocalDate
+): Map<String, Int> = listOf(
+    FILTER_ALL_V29,
+    FILTER_NEW_V36,
+    FILTER_IN_PROGRESS_V29,
+    FILTER_DELAYED_V29,
+    FILTER_CANCELLED_V29,
+    FILTER_DONE_V29
+).associateWith { filter ->
+    rows.count { c -> scheduleMatchesStatusV36(c, filter, today) }
 }
 
 private fun ocrWarningsV29(c: InvestigationCase): List<String> = buildList {
