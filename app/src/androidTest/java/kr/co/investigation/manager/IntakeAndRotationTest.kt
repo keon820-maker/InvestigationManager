@@ -415,6 +415,22 @@ class IntakeAndRotationTest {
         assertOrder(smallId,largeId)
     }
 
+    @Test fun scheduleCanCancelWithoutDeletingAndFilterCancelledCases() {
+        ui.onNodeWithTag("schedule-list").performScrollToNode(hasTestTag("schedule-case-$smallId"))
+        ui.onNodeWithTag("schedule-menu-$smallId").performClick()
+        ui.onNodeWithTag("schedule-cancel-$smallId").performClick()
+        ui.waitUntil(10_000) {
+            runBlocking { AppDb.get(context).cases().get(smallId)?.status == "의뢰취소" }
+        }
+        assertNull(runBlocking { AppDb.get(context).cases().get(smallId)!!.deletedAt })
+
+        ui.onNodeWithTag("schedule-filter-의뢰취소").performScrollTo().performClick()
+        ui.onNodeWithTag("schedule-case-$smallId").assertExists()
+        ui.onNodeWithTag("schedule-case-$largeId").assertDoesNotExist()
+        ui.onNodeWithTag("schedule-filter-전체보기").performScrollTo().performClick()
+        ui.onNodeWithTag("schedule-case-$largeId").assertExists()
+    }
+
     @Test fun existingDuplicatedNotesChangeOnlyAfterCleanupAndSave() {
         val original="검증 담당자와 통화 후 방문\n기타요청사항\n검증 담당자와 통화 후 방문\n추가 사진 확인"
         val cleaned="검증 담당자와 통화 후 방문\n추가 사진 확인"
