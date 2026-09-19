@@ -13,9 +13,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -180,18 +178,17 @@ private fun UsageGuideDialogV29(onClose: () -> Unit) {
                 Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(9.dp)
             ) {
-                Text("문서 → 일정 → 동선 → 지도/내비 순서로 사용합니다.", fontWeight = FontWeight.SemiBold)
+                Text("문서 → 일정 → 지도/내비 순서로 사용합니다.", fontWeight = FontWeight.SemiBold)
                 Text("1. 신규 등록에서 기존 사진을 선택하거나 카메라로 조사의뢰서를 촬영합니다.")
                 Text("2. OCR 결과를 확인하고 조사 예정일과 진행도를 지정합니다.")
-                Text("3. 일정 화면의 오늘/내일/이번주 필터로 방문할 건을 확인합니다.")
-                Text("4. 같은 날짜의 ‘동선’ 버튼에서 방문순서를 정하거나 거리순 자동정렬합니다.")
-                Text("5. 진행중 건은 카카오맵에 표시되며 마커의 간단정보로 대상을 구분할 수 있습니다.")
-                Text("6. 편집 화면의 주소지 변경에서 지도 표시 위치를 지정합니다. 직접입력 주소는 조사의뢰서에도 표시됩니다.")
-                Text("7. 전화는 임차인·물건 소유자·채무자 중 저장된 번호를 선택합니다.")
-                Text("8. 캘린더에서는 월 전체 조사 일정을 한눈에 확인합니다.")
-                Text("9. 전체 데이터시트에서는 모든 연도의 저장 건을 필터링하고 화면 크기를 조절해 확인합니다.")
-                Text("10. 태블릿 가로 분할 화면에서는 지도 위 ‘지도 폭’ 버튼으로 지도 크기를 조절합니다.")
-                Text("11. 데이터 및 동기화에서 같은 Google 계정으로 로그인하면 조사 데이터와 원본이 기기 간 자동 동기화됩니다.")
+                Text("3. 일정 화면의 달력 버튼으로 조회기간을 지정하거나 오늘/내일/이번주 빠른 버튼을 사용합니다.")
+                Text("4. 진행중 건은 카카오맵에 표시되며 마커의 간단정보로 대상을 구분할 수 있습니다.")
+                Text("5. 편집 화면의 주소지 변경에서 지도 표시 위치를 지정합니다. 직접입력 주소는 조사의뢰서에도 표시됩니다.")
+                Text("6. 전화는 임차인·물건 소유자·채무자 중 저장된 번호를 선택합니다.")
+                Text("7. 캘린더의 일정을 누르면 편집하거나 길찾기를 시작할 수 있습니다.")
+                Text("8. 전체 데이터시트에서는 모든 연도의 저장 건을 필터링하고 화면 크기를 조절해 확인합니다.")
+                Text("9. 태블릿 가로 분할 화면에서는 지도 위 ‘지도 폭’ 버튼으로 지도 크기를 조절합니다.")
+                Text("10. 데이터 및 동기화에서 같은 Google 계정으로 로그인하면 조사 데이터와 원본이 기기 간 자동 동기화됩니다.")
                 Text("조사의뢰서/원본과 지도는 두 번 터치 및 두 손가락 확대·축소를 지원합니다.", style = MaterialTheme.typography.bodySmall)
             }
         },
@@ -217,11 +214,13 @@ private fun MainScreenV29(
     var query by remember { mutableStateOf("") }
     var mobileTab by rememberSaveable { mutableIntStateOf(0) }
     var showCompleted by rememberSaveable { mutableStateOf(false) }
-    var quickFilter by rememberSaveable { mutableStateOf(FILTER_ALL_V29) }
-    var scheduleSortName by rememberUiState { mutableStateOf(ScheduleSort.ROUTE.name) }
-    val scheduleSort = ScheduleSort.entries.firstOrNull { it.name == scheduleSortName } ?: ScheduleSort.ROUTE
+    var quickFilter by rememberSaveable { mutableStateOf(FILTER_TODAY_V29) }
+    var periodStart by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }
+    var periodEnd by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }
+    var showPeriodPicker by remember { mutableStateOf(false) }
+    var scheduleSortName by rememberUiState { mutableStateOf(ScheduleSort.NUMBER_ASC.name) }
+    val scheduleSort = ScheduleSort.entries.firstOrNull { it.name == scheduleSortName } ?: ScheduleSort.NUMBER_ASC
     var moreMenu by remember { mutableStateOf(false) }
-    var routeDate by remember { mutableStateOf<String?>(null) }
     var navCase by remember { mutableStateOf<InvestigationCase?>(null) }
     var callCase by remember { mutableStateOf<InvestigationCase?>(null) }
     val context = LocalContext.current
@@ -243,12 +242,29 @@ private fun MainScreenV29(
     val weekStart = todayDate.minusDays((todayDate.dayOfWeek.value - DayOfWeek.MONDAY.value).toLong())
     val weekEnd = weekStart.plusDays(6)
 
-    routeDate?.let { date ->
-        RoutePlannerDialogV29(
-            date = date,
-            items = cases.filter { it.plannedDate == date && it.status.normalizedStatusV29() != STATUS_DONE_V29 },
-            onDismiss = { routeDate = null },
-            onSave = { routeDate = null; vm.saveRouteOrder(it) }
+    if (showPeriodPicker) {
+        SchedulePeriodDialogV33(
+            initialStart = when (quickFilter) {
+                FILTER_TODAY_V29 -> today
+                FILTER_TOMORROW_V29 -> tomorrow
+                FILTER_WEEK_V29 -> weekStart.toString()
+                FILTER_PERIOD_V29 -> periodStart
+                else -> today
+            },
+            initialEnd = when (quickFilter) {
+                FILTER_TODAY_V29 -> today
+                FILTER_TOMORROW_V29 -> tomorrow
+                FILTER_WEEK_V29 -> weekEnd.toString()
+                FILTER_PERIOD_V29 -> periodEnd
+                else -> today
+            },
+            onDismiss = { showPeriodPicker = false },
+            onApply = { start, end ->
+                periodStart = start
+                periodEnd = end
+                quickFilter = FILTER_PERIOD_V29
+                showPeriodPicker = false
+            }
         )
     }
 
@@ -266,7 +282,7 @@ private fun MainScreenV29(
             ).any { it.contains(query, true) }
         }
     }
-    val quickFiltered = remember(searched, quickFilter, today, tomorrow, weekStart, weekEnd) {
+    val quickFiltered = remember(searched, quickFilter, today, tomorrow, weekStart, weekEnd, periodStart, periodEnd) {
         searched.filter { c ->
             when (quickFilter) {
                 FILTER_TODAY_V29 -> c.plannedDate == today
@@ -274,7 +290,11 @@ private fun MainScreenV29(
                 FILTER_WEEK_V29 -> c.plannedDate.toDateV29()?.let { !it.isBefore(weekStart) && !it.isAfter(weekEnd) } == true
                 FILTER_UNASSIGNED_V29 -> c.plannedDate.isBlank()
                 FILTER_DELAYED_V29 -> caseWarningsV29(c, todayDate).any { it.contains("초과") || it.contains("지남") }
-                else -> true
+                else -> c.plannedDate.toDateV29()?.let { date ->
+                    val start = periodStart.toDateV29() ?: todayDate
+                    val end = periodEnd.toDateV29() ?: start
+                    !date.isBefore(minOf(start, end)) && !date.isAfter(maxOf(start, end))
+                } == true
             }
         }
     }
@@ -358,6 +378,8 @@ private fun MainScreenV29(
                     onQuery = { query = it },
                     quickFilter = quickFilter,
                     onQuickFilter = { quickFilter = it },
+                    periodLabel = schedulePeriodLabelV33(quickFilter, periodStart, periodEnd, todayDate),
+                    onPeriod = { showPeriodPicker = true },
                     sort = scheduleSort,
                     onSort = { scheduleSortName = it.name },
                     counts = SummaryCountsV29(todayCount, progressCount, delayedCount, unassignedCount, newCount, completedCount),
@@ -376,7 +398,6 @@ private fun MainScreenV29(
                         }
                     },
                     onSchedule = { c, date -> vm.update(c.copy(plannedDate = date, routeOrder = 0)) },
-                    onRoute = { routeDate = it },
                     modifier = modifier
                 )
             }
@@ -421,6 +442,8 @@ private fun SchedulePaneV29(
     onQuery: (String) -> Unit,
     quickFilter: String,
     onQuickFilter: (String) -> Unit,
+    periodLabel: String,
+    onPeriod: () -> Unit,
     sort: ScheduleSort,
     onSort: (ScheduleSort) -> Unit,
     counts: SummaryCountsV29,
@@ -433,7 +456,6 @@ private fun SchedulePaneV29(
     onCall: (InvestigationCase) -> Unit,
     onStatus: (InvestigationCase, String) -> Unit,
     onSchedule: (InvestigationCase, String) -> Unit,
-    onRoute: (String) -> Unit,
     modifier: Modifier
 ) {
     var menuCaseId by remember { mutableStateOf<Long?>(null) }
@@ -463,6 +485,11 @@ private fun SchedulePaneV29(
         Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
             SummaryRowV29(counts)
             Spacer(Modifier.height(9.dp))
+            FilledTonalButton(
+                onClick = onPeriod,
+                modifier = Modifier.fillMaxWidth().testTag("schedule-period")
+            ) { Text("▦  조회기간 · $periodLabel") }
+            Spacer(Modifier.height(7.dp))
             QuickFiltersV29(quickFilter, onQuickFilter)
             Spacer(Modifier.height(9.dp))
             OutlinedTextField(
@@ -506,9 +533,7 @@ private fun SchedulePaneV29(
                     item(key = "head-$date") {
                         DateHeaderV29(
                             date = date,
-                            count = rows.size,
-                            routeCount = rows.count { it.status.normalizedStatusV29() != STATUS_DONE_V29 },
-                            onRoute = if (date != NO_DATE_V29) ({ onRoute(date) }) else null
+                            count = rows.size
                         )
                     }
                     items(rows, key = { it.id }) { c ->
@@ -563,14 +588,14 @@ private fun SummaryRowV29(c: SummaryCountsV29) {
 @Composable
 private fun QuickFiltersV29(value: String, onChange: (String) -> Unit) {
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-        listOf(FILTER_ALL_V29, FILTER_TODAY_V29, FILTER_TOMORROW_V29, FILTER_WEEK_V29, FILTER_UNASSIGNED_V29, FILTER_DELAYED_V29).forEach {
+        listOf(FILTER_TODAY_V29, FILTER_TOMORROW_V29, FILTER_WEEK_V29, FILTER_UNASSIGNED_V29, FILTER_DELAYED_V29).forEach {
             FilterChip(selected = value == it, onClick = { onChange(it) }, label = { Text(it) })
         }
     }
 }
 
 @Composable
-private fun DateHeaderV29(date: String, count: Int, routeCount: Int, onRoute: (() -> Unit)?) {
+private fun DateHeaderV29(date: String, count: Int) {
     val title = when (date) {
         NO_DATE_V29 -> "예정일 미지정"
         LocalDate.now().toString() -> "오늘 · ${displayDateV29(date)}"
@@ -579,10 +604,6 @@ private fun DateHeaderV29(date: String, count: Int, routeCount: Int, onRoute: ((
     Row(Modifier.fillMaxWidth().padding(top = 5.dp, start = 3.dp, end = 3.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
         Text("${count}건", style = MaterialTheme.typography.labelMedium)
-        if (onRoute != null && routeCount > 1) {
-            Spacer(Modifier.width(5.dp))
-            FilledTonalButton(onClick = onRoute, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)) { Text("동선") }
-        }
     }
 }
 
@@ -612,12 +633,6 @@ private fun CaseCardV29(
     ElevatedCard(Modifier.fillMaxWidth().testTag("schedule-case-${c.id}").clickable(onClick = onOpen), shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                if (c.routeOrder > 0 && c.plannedDate.isNotBlank()) {
-                    Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary) {
-                        Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) { Text(c.routeOrder.toString(), fontWeight = FontWeight.Bold) }
-                    }
-                    Spacer(Modifier.width(8.dp))
-                }
                 Column(Modifier.weight(1f)) {
                     Text(c.managementNo.ifBlank { "관리번호 없음" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (c.debtorName.isNotBlank()) Text(c.debtorName, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -806,67 +821,40 @@ private fun PhoneChoiceDialogV29(c: InvestigationCase, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun RoutePlannerDialogV29(
-    date: String,
-    items: List<InvestigationCase>,
-    onDismiss: () -> Unit,
-    onSave: (List<InvestigationCase>) -> Unit
-) {
-    val ordered = remember(date, items) {
-        items.sortedWith(compareBy<InvestigationCase> { if (it.routeOrder > 0) it.routeOrder else Int.MAX_VALUE }.thenBy { it.id }).toMutableStateList()
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("${displayDateV29(date)} 동선") },
-        text = {
-            Column {
-                Text("방문순서를 바꾸거나 거리순으로 자동 정렬하세요.", style = MaterialTheme.typography.bodySmall)
-                Spacer(Modifier.height(7.dp))
-                FilledTonalButton(
-                    onClick = {
-                        val sorted = autoRouteV29(ordered.toList())
-                        ordered.clear(); ordered.addAll(sorted)
-                    },
-                    enabled = ordered.count { it.propertyLatitude != null && it.propertyLongitude != null } >= 2,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("거리순 자동정렬") }
-                Spacer(Modifier.height(7.dp))
-                LazyColumn(Modifier.heightIn(max = 430.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    itemsIndexed(ordered, key = { _, c -> c.id }) { index, c ->
-                        OutlinedCard(Modifier.fillMaxWidth()) {
-                            Row(Modifier.fillMaxWidth().padding(7.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary) {
-                                    Box(Modifier.size(31.dp), contentAlignment = Alignment.Center) { Text((index + 1).toString(), fontWeight = FontWeight.Bold) }
-                                }
-                                Spacer(Modifier.width(7.dp))
-                                Column(Modifier.weight(1f)) {
-                                    Text(c.managementNo.ifBlank { c.debtorName }, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text(c.propertyAddress, style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                }
-                                TextButton(enabled = index > 0, onClick = {
-                                    val moved = ordered.removeAt(index); ordered.add(index - 1, moved)
-                                }) { Text("↑") }
-                                TextButton(enabled = index < ordered.lastIndex, onClick = {
-                                    val moved = ordered.removeAt(index); ordered.add(index + 1, moved)
-                                }) { Text("↓") }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = { Button(onClick = { onSave(ordered.toList()) }, enabled = ordered.isNotEmpty()) { Text("순서 저장") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } }
-    )
-}
-
-@Composable
 private fun CalendarScreenV29(vm: AppViewModel, onBack: () -> Unit, onOpen: (InvestigationCase) -> Unit) {
     val cases by vm.cases.collectAsStateWithLifecycle()
     var month by rememberUiState(stateSaver = Saver<YearMonth, String>(save = { it.toString() }, restore = { YearMonth.parse(it) })) { mutableStateOf(YearMonth.now()) }
     var selectedDate by rememberUiState(stateSaver = Saver<LocalDate, String>(save = { it.toString() }, restore = { LocalDate.parse(it) })) { mutableStateOf(LocalDate.now()) }
     val byDate = remember(cases) { cases.filter { it.plannedDate.isNotBlank() }.groupBy { it.plannedDate } }
     val today = LocalDate.now()
+    var actionCase by remember { mutableStateOf<InvestigationCase?>(null) }
+    var navCase by remember { mutableStateOf<InvestigationCase?>(null) }
+
+    actionCase?.let { c ->
+        AlertDialog(
+            onDismissRequest = { actionCase = null },
+            title = { Text("일정 작업 선택") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(c.managementNo.ifBlank { c.debtorName.ifBlank { "조사건" } }, fontWeight = FontWeight.SemiBold)
+                    if (c.debtorName.isNotBlank()) Text(c.debtorName)
+                    Text(c.defaultAddress().ifBlank { "저장된 주소가 없습니다." }, style = MaterialTheme.typography.bodySmall)
+                    Button(
+                        onClick = { actionCase = null; onOpen(c) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("편집") }
+                    OutlinedButton(
+                        onClick = { actionCase = null; navCase = c },
+                        enabled = c.propertyAddress.isNotBlank() || c.ownerAddress.isNotBlank() || c.customMapAddress.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("길찾기") }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { actionCase = null }) { Text("닫기") } }
+        )
+    }
+    navCase?.let { c -> NavigationFlowDialogV29(c = c, onDismiss = { navCase = null }) }
 
     Scaffold(
         topBar = {
@@ -894,22 +882,17 @@ private fun CalendarScreenV29(vm: AppViewModel, onBack: () -> Unit, onOpen: (Inv
                 modifier = Modifier.padding(12.dp)
             )
             val rows = byDate[selectedDate.toString()].orEmpty().sortedWith(
-                compareBy<InvestigationCase> { if (it.routeOrder > 0) it.routeOrder else Int.MAX_VALUE }
-                    .thenBy { statusOrderV29(it.status) }
+                compareBy<InvestigationCase> { statusOrderV29(it.status) }
+                    .thenBy { it.managementNo }
+                    .thenBy { it.id }
             )
             if (rows.isEmpty()) {
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { Text("이 날짜의 조사 일정이 없습니다.") }
             } else {
                 LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     items(rows, key = { it.id }) { c ->
-                        OutlinedCard(Modifier.fillMaxWidth().clickable { onOpen(c) }) {
+                        OutlinedCard(Modifier.fillMaxWidth().clickable { actionCase = c }) {
                             Row(Modifier.fillMaxWidth().padding(11.dp), verticalAlignment = Alignment.CenterVertically) {
-                                if (c.routeOrder > 0) {
-                                    Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary) {
-                                        Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) { Text(c.routeOrder.toString(), fontWeight = FontWeight.Bold) }
-                                    }
-                                    Spacer(Modifier.width(8.dp))
-                                }
                                 Column(Modifier.weight(1f)) {
                                     Text(c.managementNo.ifBlank { c.debtorName.ifBlank { "조사건" } }, fontWeight = FontWeight.SemiBold)
                                     if (c.debtorName.isNotBlank()) Text(c.debtorName, style = MaterialTheme.typography.bodySmall)
@@ -1240,6 +1223,57 @@ private fun PlannedDateDialogV29(initial: String, onDismiss: () -> Unit, onSave:
     ) { DatePicker(state = state) }
 }
 
+@Composable
+private fun SchedulePeriodDialogV33(
+    initialStart: String,
+    initialEnd: String,
+    onDismiss: () -> Unit,
+    onApply: (String, String) -> Unit
+) {
+    val today = LocalDate.now()
+    fun millis(value: String): Long = (value.toDateV29() ?: today)
+        .atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+    val state = rememberDateRangePickerState(
+        initialSelectedStartDateMillis = millis(initialStart),
+        initialSelectedEndDateMillis = millis(initialEnd)
+    )
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = {
+                val startMillis = state.selectedStartDateMillis ?: millis(today.toString())
+                val endMillis = state.selectedEndDateMillis ?: startMillis
+                val start = Instant.ofEpochMilli(minOf(startMillis, endMillis)).atZone(ZoneOffset.UTC).toLocalDate().toString()
+                val end = Instant.ofEpochMilli(maxOf(startMillis, endMillis)).atZone(ZoneOffset.UTC).toLocalDate().toString()
+                onApply(start, end)
+            }) { Text("조회") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } }
+    ) {
+        DateRangePicker(
+            state = state,
+            title = { Text("조회 기간 지정", modifier = Modifier.padding(start = 24.dp, top = 16.dp)) },
+            headline = null,
+            showModeToggle = false
+        )
+    }
+}
+
+private fun schedulePeriodLabelV33(
+    filter: String,
+    periodStart: String,
+    periodEnd: String,
+    today: LocalDate
+): String = when (filter) {
+    FILTER_TODAY_V29 -> displayDateV29(today.toString())
+    FILTER_TOMORROW_V29 -> displayDateV29(today.plusDays(1).toString())
+    FILTER_WEEK_V29 -> "이번주"
+    FILTER_UNASSIGNED_V29 -> "미지정"
+    FILTER_DELAYED_V29 -> "지연"
+    else -> if (periodStart == periodEnd) displayDateV29(periodStart)
+    else "${displayDateV29(periodStart)} ~ ${displayDateV29(periodEnd)}"
+}
+
 private fun ocrWarningsV29(c: InvestigationCase): List<String> = buildList {
     if (c.managementNo.isBlank()) add("관리번호가 비어 있습니다.")
     if (c.requestDate.isBlank()) add("의뢰일을 확인하세요.")
@@ -1265,40 +1299,11 @@ private fun caseWarningsV29(c: InvestigationCase, today: LocalDate): List<String
     }
 }
 
-private fun autoRouteV29(items: List<InvestigationCase>): List<InvestigationCase> {
-    if (items.size < 2) return items
-    val withCoords = items.filter { it.propertyLatitude != null && it.propertyLongitude != null }.toMutableList()
-    val withoutCoords = items.filter { it.propertyLatitude == null || it.propertyLongitude == null }
-    if (withCoords.size < 2) return items
-
-    val result = mutableListOf<InvestigationCase>()
-    var current = withCoords.removeAt(0)
-    result += current
-    while (withCoords.isNotEmpty()) {
-        val next = withCoords.minByOrNull {
-            distanceKmV29(current.propertyLatitude!!, current.propertyLongitude!!, it.propertyLatitude!!, it.propertyLongitude!!)
-        }!!
-        withCoords.remove(next)
-        result += next
-        current = next
-    }
-    result += withoutCoords
-    return result
-}
-
-private fun distanceKmV29(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-    val r = 6371.0
-    val dLat = Math.toRadians(lat2 - lat1)
-    val dLon = Math.toRadians(lon2 - lon1)
-    val a = sin(dLat / 2).pow(2) + cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) * sin(dLon / 2).pow(2)
-    return 2 * r * asin(sqrt(a))
-}
-
 private const val STATUS_NEW_V29 = "신규"
 private const val STATUS_IN_PROGRESS_V29 = "진행중"
 private const val STATUS_DONE_V29 = "완료"
 private val STATUS_VALUES_V29 = listOf(STATUS_NEW_V29, STATUS_IN_PROGRESS_V29, STATUS_DONE_V29)
-private const val FILTER_ALL_V29 = "전체"
+private const val FILTER_PERIOD_V29 = "조회기간"
 private const val FILTER_TODAY_V29 = "오늘"
 private const val FILTER_TOMORROW_V29 = "내일"
 private const val FILTER_WEEK_V29 = "이번주"

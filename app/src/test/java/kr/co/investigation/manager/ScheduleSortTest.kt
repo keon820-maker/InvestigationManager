@@ -31,14 +31,12 @@ class ScheduleSortTest {
         }
     }
 
-    @Test fun defaultRouteOrderIsPreservedAndSwitchingSortDoesNotWriteRoutes() {
+    @Test fun removedRouteOrderDoesNotAffectVisibleSorting() {
         val rows = listOf(row(1, "검사-1", route = 2), row(2, "검사-2", route = 1),
             row(3, "검사-3", route = 0))
-        assertEquals(listOf(2L, 1L, 3L), sortScheduleRows(rows, ScheduleSort.ROUTE).map { it.id })
         val byNumber = sortScheduleRows(rows, ScheduleSort.NUMBER_ASC)
         assertEquals(listOf(1L, 2L, 3L), byNumber.map { it.id })
         assertEquals(listOf(2, 1, 0), byNumber.map { it.routeOrder })
-        assertEquals(listOf(2L, 1L, 3L), sortScheduleRows(byNumber, ScheduleSort.ROUTE).map { it.id })
     }
 
     @Test fun tiesHaveDeterministicOrder() {
