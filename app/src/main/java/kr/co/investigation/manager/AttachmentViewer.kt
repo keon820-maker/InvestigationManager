@@ -167,6 +167,7 @@ fun AttachmentViewerScreen(att: Attachment, onBack: () -> Unit) {
 private fun attachmentTitle(att: Attachment): String = when (att.type) {
     "ORIGINAL_REQUEST" -> "원본 조사의뢰서"
     "CONFIRMATION" -> "조사확인서 원본"
+    "OTHER" -> att.originalName.substringBeforeLast('.').ifBlank { "기타 자료" }
     else -> "첨부 원본"
 }
 

@@ -29,6 +29,14 @@ class CloudSyncRepository(
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance(),
     private val storage: FirebaseStorage = FirebaseStorage.getInstance()
 ) {
+    suspend fun deleteAttachment(uid: String, caseCloudId: String, attachment: Attachment) = withContext(Dispatchers.IO) {
+        if (attachment.remotePath.isNotBlank()) {
+            runCatching { storage.reference.child(attachment.remotePath).delete().await() }
+        }
+        attachmentCollection(uid, caseCloudId).document(attachment.cloudId).delete().await()
+        cases(uid).document(caseCloudId).update("attachmentsChangedAt", FieldValue.serverTimestamp()).await()
+    }
+
     suspend fun sync(uid: String): SyncSummary = withContext(Dispatchers.IO) {
         ensureCloudIds()
         val caseResult = syncCases(uid)

@@ -698,7 +698,7 @@ private fun WarningPillV29(text: String) {
 }
 
 @Composable
-private fun NavigationFlowDialogV29(c: InvestigationCase, onDismiss: () -> Unit) {
+internal fun NavigationFlowDialogV29(c: InvestigationCase, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var target by remember(c.id) { mutableStateOf<NavigationTargetV29?>(null) }
@@ -896,7 +896,7 @@ private fun CalendarScreenV29(vm: AppViewModel, onBack: () -> Unit, onOpen: (Inv
                                 Column(Modifier.weight(1f)) {
                                     Text(c.managementNo.ifBlank { c.debtorName.ifBlank { "조사건" } }, fontWeight = FontWeight.SemiBold)
                                     if (c.debtorName.isNotBlank()) Text(c.debtorName, style = MaterialTheme.typography.bodySmall)
-                                    Text(c.propertyAddress, style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    Text("${c.defaultAddressLabel()} · ${c.defaultAddress()}", style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 }
                                 AssistChip(onClick = {}, label = { Text(c.status.normalizedStatusV29()) })
                             }
