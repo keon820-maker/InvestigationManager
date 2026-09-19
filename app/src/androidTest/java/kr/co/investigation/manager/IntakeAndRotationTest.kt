@@ -397,8 +397,9 @@ class IntakeAndRotationTest {
         }
         runBlocking {
             val dao=AppDb.get(context).cases()
-            dao.update(dao.get(smallId)!!.copy(createdAt=3000L))
-            dao.update(dao.get(largeId)!!.copy(createdAt=1000L))
+            val today = LocalDate.now().toString()
+            dao.update(dao.get(smallId)!!.copy(createdAt=3000L, plannedDate=today))
+            dao.update(dao.get(largeId)!!.copy(createdAt=1000L, plannedDate=today))
         }
         ui.onNode(hasSetTextAction()).performTextInput("검사")
         closeSoftKeyboard()
