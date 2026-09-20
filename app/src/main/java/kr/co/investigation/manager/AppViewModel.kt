@@ -217,7 +217,22 @@ class AppViewModel(
 
     fun changeStatus(c: InvestigationCase, status: String) {
         viewModelScope.launch {
-            persistEdits(changeDraftStatusV36(c, status))
+            val current = db.cases().get(c.id) ?: return@launch
+            if (current.deletedAt != null) return@launch
+            persistEdits(changeDraftStatusV36(current, status))
+        }
+    }
+
+    fun changePlannedDate(c: InvestigationCase, date: String) {
+        viewModelScope.launch {
+            val current = db.cases().get(c.id) ?: return@launch
+            if (current.deletedAt != null) return@launch
+            persistEdits(
+                current.copy(
+                    plannedDate = date,
+                    routeOrder = if (date == current.plannedDate) current.routeOrder else 0
+                )
+            )
         }
     }
 
