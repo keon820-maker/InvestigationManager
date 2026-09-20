@@ -376,7 +376,9 @@ fun DataSheetScreenV31(
                         }
                         HorizontalDivider()
                         if(sorted.isEmpty()) Text("필터 조건에 맞는 데이터가 없습니다.", modifier = Modifier.padding(16.dp))
-                        LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
+                        LazyColumn(
+                            Modifier.fillMaxWidth().weight(1f).testTag("sheet-list")
+                        ) {
                             itemsIndexed(sorted, key = { _, c -> c.id }) { index, c ->
                                 DataSheetRowV31(
                                     index = index,
