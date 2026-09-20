@@ -459,9 +459,7 @@ private fun DataSheetRowV31(
     val background = when {
         selectionMode && selected -> MaterialTheme.colorScheme.secondaryContainer
         !selectionMode && focused -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = .72f)
-        normalizedStatusV31(c.status) == DATA_DONE_V31 -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .42f)
-        index % 2 == 1 -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .20f)
-        else -> MaterialTheme.colorScheme.surface
+        else -> statusContainerColorV36(c.status).copy(alpha = if (index % 2 == 1) .30f else .20f)
     }
     Row(
         Modifier
@@ -639,12 +637,7 @@ internal fun dataSheetStatusCountsV36(rows: List<InvestigationCase>): Map<String
     DATA_DONE_V31 to rows.count { normalizedStatusV31(it.status) == DATA_DONE_V31 }
 )
 
-internal fun normalizedStatusV31(value: String): String = when (value.trim()) {
-    DATA_PROGRESS_V31 -> DATA_PROGRESS_V31
-    DATA_CANCELLED_V31 -> DATA_CANCELLED_V31
-    DATA_DONE_V31 -> DATA_DONE_V31
-    else -> DATA_NEW_V31
-}
+internal fun normalizedStatusV31(value: String): String = normalizeCaseStatusV36(value)
 
 internal fun isDelayedV31(c: InvestigationCase, today: LocalDate): Boolean {
     if (normalizedStatusV31(c.status) in setOf(DATA_DONE_V31, DATA_CANCELLED_V31)) return false
