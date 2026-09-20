@@ -554,6 +554,10 @@ private fun SchedulePaneV29(
                 else -> dateFilter
             }
             val statusSummary = if (statusFilter == FILTER_ALL_V29) "전체" else statusFilter
+            val filterSummary = buildString {
+                append(dateSummary).append(" · ").append(statusSummary).append(" · ").append(viewMode)
+                if (query.isNotBlank()) append(" · 검색")
+            }
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -565,7 +569,7 @@ private fun SchedulePaneV29(
                 )
                 Spacer(Modifier.width(10.dp))
                 Text(
-                    "${dateSummary} · ${statusSummary} · ${viewMode}",
+                    filterSummary,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
