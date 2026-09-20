@@ -427,14 +427,7 @@ private fun MainScreenV29(
                     onForm = onForm,
                     onNavigate = { navCase = it },
                     onCall = { callCase = it },
-                    onStatus = { c, status ->
-                        when (status) {
-                            STATUS_IN_PROGRESS_V29 -> vm.startInvestigation(c)
-                            STATUS_DONE_V29 -> vm.completeInvestigation(c)
-                            STATUS_CANCELLED_V29 -> vm.update(c.copy(status = STATUS_CANCELLED_V29, startedAt = null, completedAt = null))
-                            else -> vm.update(c.copy(status = STATUS_NEW_V29, startedAt = null, completedAt = null))
-                        }
-                    },
+                    onStatus = { c, status -> vm.changeStatus(c, status) },
                     onSchedule = { c, date -> vm.update(c.copy(plannedDate = date, routeOrder = 0)) },
                     modifier = modifier
                 )
@@ -1417,7 +1410,17 @@ private fun StatusChoiceV29(value: String, onChange: (String) -> Unit) {
         Text("진행도", style = MaterialTheme.typography.labelLarge)
         Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             STATUS_VALUES_V29.forEach { status ->
-                FilterChip(selected = value.normalizedStatusV29() == status, onClick = { onChange(status) }, label = { Text(status) })
+                FilterChip(
+                    selected = value.normalizedStatusV29() == status,
+                    onClick = { onChange(status) },
+                    label = { Text(status) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        containerColor = statusContainerColorV36(status).copy(alpha = .30f),
+                        labelColor = statusContentColorV36(status),
+                        selectedContainerColor = statusContainerColorV36(status),
+                        selectedLabelColor = statusContentColorV36(status)
+                    )
+                )
             }
         }
     }
@@ -1431,8 +1434,15 @@ private fun StatusDialogV29(current: String, onDismiss: () -> Unit, onSelect: (S
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 STATUS_VALUES_V29.forEach { status ->
-                    if (current.normalizedStatusV29() == status) Button(onClick = { onSelect(status) }, modifier = Modifier.fillMaxWidth()) { Text("✓ $status") }
-                    else OutlinedButton(onClick = { onSelect(status) }, modifier = Modifier.fillMaxWidth()) { Text(status) }
+                    val selected = current.normalizedStatusV29() == status
+                    Button(
+                        onClick = { onSelect(status) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = statusContainerColorV36(status),
+                            contentColor = statusContentColorV36(status)
+                        )
+                    ) { Text((if (selected) "✓ " else "") + status) }
                 }
             }
         },
@@ -1581,11 +1591,11 @@ private fun caseWarningsV29(c: InvestigationCase, today: LocalDate): List<String
     }
 }
 
-private const val STATUS_NEW_V29 = "신규"
-private const val STATUS_IN_PROGRESS_V29 = "진행중"
-private const val STATUS_CANCELLED_V29 = "의뢰취소"
-private const val STATUS_DONE_V29 = "완료"
-private val STATUS_VALUES_V29 = listOf(STATUS_NEW_V29, STATUS_IN_PROGRESS_V29, STATUS_CANCELLED_V29, STATUS_DONE_V29)
+private const val STATUS_NEW_V29 = CASE_STATUS_NEW_V36
+private const val STATUS_IN_PROGRESS_V29 = CASE_STATUS_PROGRESS_V36
+private const val STATUS_CANCELLED_V29 = CASE_STATUS_CANCELLED_V36
+private const val STATUS_DONE_V29 = CASE_STATUS_DONE_V36
+private val STATUS_VALUES_V29 = CASE_STATUS_VALUES_V36
 private const val SCHEDULE_VIEW_DATE_V36 = "날짜별"
 private const val SCHEDULE_VIEW_NUMBER_V36 = "조사번호"
 private const val FILTER_PERIOD_V29 = "조회기간"
@@ -1607,12 +1617,7 @@ private val MAP_WIDTH_FRACTIONS_V31 = listOf(.38f, .50f, .60f)
 private val displayDateFormatterV29 = DateTimeFormatter.ofPattern("M월 d일 (E)", Locale.KOREAN)
 private val timestampFormatterV29 = DateTimeFormatter.ofPattern("M/d HH:mm", Locale.KOREAN)
 
-private fun String.normalizedStatusV29(): String = when (trim()) {
-    STATUS_IN_PROGRESS_V29 -> STATUS_IN_PROGRESS_V29
-    STATUS_CANCELLED_V29 -> STATUS_CANCELLED_V29
-    STATUS_DONE_V29 -> STATUS_DONE_V29
-    else -> STATUS_NEW_V29
-}
+private fun String.normalizedStatusV29(): String = normalizeCaseStatusV36(this)
 
 private fun statusOrderV29(value: String): Int = when (value.normalizedStatusV29()) {
     STATUS_NEW_V29 -> 0
