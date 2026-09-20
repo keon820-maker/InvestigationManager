@@ -1228,13 +1228,16 @@ private fun OcrRegisterScreenV29(vm: AppViewModel, onDone: () -> Unit, onCancel:
         statusMessage = "저장 중…"
         var createdCaseId: Long? = null
         var copiedOriginalPath: String? = null
+        var cameraOriginalFinalized = false
         try {
             val uri = source ?: error("조사의뢰서 원본을 다시 선택해주세요.")
             val finalCase = profile.applyTo(parsed).copy(status = parsed.status.normalizedStatusV29())
             val id = vm.create(finalCase, scheduleAfterCreate = false)
             createdCaseId = id
             val attachment = if (cameraSource && cameraFile != null) {
-                OriginalFileStore.finalizeCamera(cameraFile!!, id, "ORIGINAL_REQUEST").attachment
+                OriginalFileStore.finalizeCamera(cameraFile!!, id, "ORIGINAL_REQUEST").attachment.also {
+                    cameraOriginalFinalized = true
+                }
             } else {
                 OriginalFileStore.copyOriginal(ctx, uri, id, parsed.year, "ORIGINAL_REQUEST").attachment
             }
@@ -1250,7 +1253,14 @@ private fun OcrRegisterScreenV29(vm: AppViewModel, onDone: () -> Unit, onCancel:
         } catch (error: Exception) {
             createdCaseId?.let { runCatching { vm.rollbackNewCase(it) } }
             copiedOriginalPath?.let { runCatching { File(it).delete() } }
-            statusMessage = "저장하지 못했습니다. 원본 파일과 저장공간을 확인한 뒤 다시 시도해주세요."
+            if (cameraOriginalFinalized) {
+                cameraFile = null
+                source = null
+                cameraSource = false
+                statusMessage = "저장하지 못했습니다. 카메라 사진을 다시 촬영해주세요."
+            } else {
+                statusMessage = "저장하지 못했습니다. 원본 파일과 저장공간을 확인한 뒤 다시 시도해주세요."
+            }
             preprocess = "저장 실패: ${error.message.orEmpty()}"
         } finally {
             saving = false
