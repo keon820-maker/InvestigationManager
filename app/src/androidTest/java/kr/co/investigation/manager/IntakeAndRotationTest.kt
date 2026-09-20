@@ -117,6 +117,9 @@ class IntakeAndRotationTest {
     }
 
     private fun openDataSheetCase(id: Long) {
+        ui.waitUntil(10_000) {
+            ui.onAllNodesWithTag("sheet-list").fetchSemanticsNodes().isNotEmpty()
+        }
         ui.onNodeWithTag("sheet-list").performScrollToNode(hasTestTag("sheet-row-$id"))
         ui.onNodeWithTag("sheet-row-$id").performClick()
         ui.waitForIdle()
