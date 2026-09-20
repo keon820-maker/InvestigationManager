@@ -271,10 +271,38 @@ fun DataSheetScreenV31(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     listOf(DATA_ALL_V31, DATA_NEW_V31, DATA_PROGRESS_V31, DATA_CANCELLED_V31, DATA_DONE_V31).forEach { status ->
+                        val chipColors = when (status) {
+                            DATA_NEW_V31 -> FilterChipDefaults.filterChipColors(
+                                containerColor = statusContainerColorV36(CASE_STATUS_NEW_V36).copy(alpha = .30f),
+                                labelColor = statusContentColorV36(CASE_STATUS_NEW_V36),
+                                selectedContainerColor = statusContainerColorV36(CASE_STATUS_NEW_V36),
+                                selectedLabelColor = statusContentColorV36(CASE_STATUS_NEW_V36)
+                            )
+                            DATA_PROGRESS_V31 -> FilterChipDefaults.filterChipColors(
+                                containerColor = statusContainerColorV36(CASE_STATUS_PROGRESS_V36).copy(alpha = .30f),
+                                labelColor = statusContentColorV36(CASE_STATUS_PROGRESS_V36),
+                                selectedContainerColor = statusContainerColorV36(CASE_STATUS_PROGRESS_V36),
+                                selectedLabelColor = statusContentColorV36(CASE_STATUS_PROGRESS_V36)
+                            )
+                            DATA_CANCELLED_V31 -> FilterChipDefaults.filterChipColors(
+                                containerColor = statusContainerColorV36(CASE_STATUS_CANCELLED_V36).copy(alpha = .30f),
+                                labelColor = statusContentColorV36(CASE_STATUS_CANCELLED_V36),
+                                selectedContainerColor = statusContainerColorV36(CASE_STATUS_CANCELLED_V36),
+                                selectedLabelColor = statusContentColorV36(CASE_STATUS_CANCELLED_V36)
+                            )
+                            DATA_DONE_V31 -> FilterChipDefaults.filterChipColors(
+                                containerColor = statusContainerColorV36(CASE_STATUS_DONE_V36).copy(alpha = .30f),
+                                labelColor = statusContentColorV36(CASE_STATUS_DONE_V36),
+                                selectedContainerColor = statusContainerColorV36(CASE_STATUS_DONE_V36),
+                                selectedLabelColor = statusContentColorV36(CASE_STATUS_DONE_V36)
+                            )
+                            else -> FilterChipDefaults.filterChipColors()
+                        }
                         FilterChip(
                             selected = statusFilter == status,
                             onClick = { statusFilter = status },
-                            label = { Text("$status ${statusCounts[status] ?: 0}") }
+                            label = { Text("$status ${statusCounts[status] ?: 0}") },
+                            colors = chipColors
                         )
                     }
                     VerticalDivider(Modifier.height(30.dp))
