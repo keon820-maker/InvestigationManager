@@ -10,6 +10,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Source
 import com.google.firebase.storage.FirebaseStorage
+import com.google.firebase.storage.StorageException
 import com.google.firebase.storage.StorageMetadata
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
@@ -31,7 +32,11 @@ class CloudSyncRepository(
 ) {
     suspend fun deleteAttachment(uid: String, caseCloudId: String, attachment: Attachment) = withContext(Dispatchers.IO) {
         if (attachment.remotePath.isNotBlank()) {
-            runCatching { storage.reference.child(attachment.remotePath).delete().await() }
+            try {
+                storage.reference.child(attachment.remotePath).delete().await()
+            } catch (error: StorageException) {
+                if (error.errorCode != StorageException.ERROR_OBJECT_NOT_FOUND) throw error
+            }
         }
         attachmentCollection(uid, caseCloudId).document(attachment.cloudId).delete().await()
         cases(uid).document(caseCloudId).update("attachmentsChangedAt", FieldValue.serverTimestamp()).await()
