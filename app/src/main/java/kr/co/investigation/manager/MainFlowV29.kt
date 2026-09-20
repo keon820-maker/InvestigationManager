@@ -1225,30 +1225,56 @@ private fun OcrRegisterScreenV29(vm: AppViewModel, onDone: () -> Unit, onCancel:
 
     suspend fun persist() {
         saving = true
-        val finalCase = profile.applyTo(parsed).copy(status = parsed.status.normalizedStatusV29())
-        val id = vm.create(finalCase)
-        source?.let { uri ->
+        statusMessage = "저장 중…"
+        var createdCaseId: Long? = null
+        var copiedOriginalPath: String? = null
+        try {
+            val uri = source ?: error("조사의뢰서 원본을 다시 선택해주세요.")
+            val finalCase = profile.applyTo(parsed).copy(status = parsed.status.normalizedStatusV29())
+            val id = vm.create(finalCase, scheduleAfterCreate = false)
+            createdCaseId = id
             val attachment = if (cameraSource && cameraFile != null) {
                 OriginalFileStore.finalizeCamera(cameraFile!!, id, "ORIGINAL_REQUEST").attachment
             } else {
                 OriginalFileStore.copyOriginal(ctx, uri, id, parsed.year, "ORIGINAL_REQUEST").attachment
             }
+            copiedOriginalPath = attachment.localPath
             vm.addAttachment(attachment)
+            cameraFile = null
+            statusMessage = "저장 완료"
+            draft.saved.value = true
+        } catch (cancelled: CancellationException) {
+            createdCaseId?.let { runCatching { vm.rollbackNewCase(it) } }
+            copiedOriginalPath?.let { runCatching { File(it).delete() } }
+            throw cancelled
+        } catch (error: Exception) {
+            createdCaseId?.let { runCatching { vm.rollbackNewCase(it) } }
+            copiedOriginalPath?.let { runCatching { File(it).delete() } }
+            statusMessage = "저장하지 못했습니다. 원본 파일과 저장공간을 확인한 뒤 다시 시도해주세요."
+            preprocess = "저장 실패: ${error.message.orEmpty()}"
+        } finally {
+            saving = false
         }
-        cameraFile = null
-        saving = false
-        draft.saved.value = true
     }
 
     fun checkDuplicatesAndPersist() {
         scope.launch {
             saving = true
-            val found = vm.findDuplicates(parsed)
-            if (found.isNotEmpty()) {
-                duplicates = found
+            try {
+                val found = vm.findDuplicates(parsed)
+                if (found.isNotEmpty()) {
+                    duplicates = found
+                    saving = false
+                } else {
+                    persist()
+                }
+            } catch (cancelled: CancellationException) {
                 saving = false
-            } else {
-                persist()
+                throw cancelled
+            } catch (error: Exception) {
+                saving = false
+                statusMessage = "중복 확인 중 오류가 발생했습니다. 다시 시도해주세요."
+                preprocess = "중복 확인 실패: ${error.message.orEmpty()}"
             }
         }
     }
