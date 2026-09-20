@@ -13,6 +13,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -32,6 +33,7 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kr.co.investigation.manager.data.Attachment
@@ -59,6 +61,7 @@ fun InvestigationAppV29(vm: AppViewModel) {
     var detailReturn by rememberUiState { mutableStateOf("main") }
     var selectedCaseId by rememberUiState { mutableStateOf<Long?>(null) }
     var viewingAttachmentId by rememberUiState { mutableStateOf<Long?>(null) }
+    var returnFocusCaseId by rememberUiState { mutableStateOf<Long?>(null) }
     val screenStates = rememberSaveableStateHolder()
     val selected by vm.selected.collectAsStateWithLifecycle()
     val attachments by remember(selected?.id) {
@@ -130,7 +133,9 @@ fun InvestigationAppV29(vm: AppViewModel) {
             onPatchHistory = { screen = "patches" },
             onCalendar = { screen = "calendar" },
             onDataSheet = { screen = "datasheet" },
-            onGuide = { showGuide = true }
+            onGuide = { showGuide = true },
+            focusCaseId = returnFocusCaseId,
+            onFocusConsumed = { id -> if (returnFocusCaseId == id) returnFocusCaseId = null }
         )
         "calendar" -> CalendarScreenV29(
             vm = vm,
@@ -140,7 +145,13 @@ fun InvestigationAppV29(vm: AppViewModel) {
         "datasheet" -> DataSheetScreenV31(
             vm = vm,
             onBack = { screen = "main" },
-            onOpen = { selectCase(it); detailReturn = "datasheet"; screen = "detail" }
+            onOpen = {
+                vm.setYear(it.year)
+                returnFocusCaseId = it.id
+                selectCase(it)
+                detailReturn = "main"
+                screen = "detail"
+            }
         )
         "ocr" -> OcrRegisterScreenV29(vm,
             onDone = { vm.ocrDraft.reset(); screen = "main" },
@@ -205,7 +216,9 @@ private fun MainScreenV29(
     onPatchHistory: () -> Unit,
     onCalendar: () -> Unit,
     onDataSheet: () -> Unit,
-    onGuide: () -> Unit
+    onGuide: () -> Unit,
+    focusCaseId: Long?,
+    onFocusConsumed: (Long) -> Unit
 ) {
     val cases by vm.cases.collectAsStateWithLifecycle()
     val year by vm.year.collectAsStateWithLifecycle()
@@ -214,6 +227,7 @@ private fun MainScreenV29(
     var mobileTab by rememberSaveable { mutableIntStateOf(0) }
     var dateFilter by rememberSaveable { mutableStateOf(FILTER_ALL_V29) }
     var statusFilter by rememberSaveable { mutableStateOf(FILTER_ALL_V29) }
+    var scheduleViewMode by rememberSaveable { mutableStateOf(SCHEDULE_VIEW_DATE_V36) }
     var periodStart by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }
     var periodEnd by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }
     var showPeriodPicker by remember { mutableStateOf(false) }
@@ -237,6 +251,15 @@ private fun MainScreenV29(
     val splitLayout = configuration.screenWidthDp >= 960 && configuration.screenHeightDp >= 600
     val todayDate = LocalDate.now()
     val today = todayDate.toString()
+
+    LaunchedEffect(focusCaseId) {
+        if (focusCaseId != null) {
+            query = ""
+            dateFilter = FILTER_ALL_V29
+            statusFilter = FILTER_ALL_V29
+            mobileTab = 0
+        }
+    }
 
     if (showPeriodPicker) {
         SchedulePeriodDialogV33(
@@ -384,6 +407,10 @@ private fun MainScreenV29(
                     onPeriod = { showPeriodPicker = true },
                     sort = scheduleSort,
                     onSort = { scheduleSortName = it.name },
+                    viewMode = scheduleViewMode,
+                    onViewMode = { scheduleViewMode = it },
+                    focusCaseId = focusCaseId,
+                    onFocusConsumed = onFocusConsumed,
                     onLocate = { vm.select(it); if (!wide) mobileTab = 1 },
                     onEdit = onEdit,
                     onForm = onForm,
@@ -440,6 +467,10 @@ private fun SchedulePaneV29(
     onPeriod: () -> Unit,
     sort: ScheduleSort,
     onSort: (ScheduleSort) -> Unit,
+    viewMode: String,
+    onViewMode: (String) -> Unit,
+    focusCaseId: Long?,
+    onFocusConsumed: (Long) -> Unit,
     onLocate: (InvestigationCase) -> Unit,
     onEdit: (InvestigationCase) -> Unit,
     onForm: (InvestigationCase) -> Unit,
@@ -471,6 +502,37 @@ private fun SchedulePaneV29(
     val grouped = remember(items, sort) {
         sortScheduleRows(items, sort).groupBy { it.plannedDate.ifBlank { NO_DATE_V29 } }
     }
+    val numberRows = remember(items) {
+        sortDataSheetRows(items, true) { it.managementNo }
+    }
+    val listState = rememberLazyListState()
+    var highlightedCaseId by remember { mutableStateOf<Long?>(null) }
+
+    LaunchedEffect(focusCaseId, grouped, numberRows, viewMode) {
+        val id = focusCaseId ?: return@LaunchedEffect
+        val targetIndex = if (viewMode == SCHEDULE_VIEW_NUMBER_V36) {
+            numberRows.indexOfFirst { it.id == id }
+        } else {
+            var base = 0
+            var found = -1
+            for ((_, rows) in grouped) {
+                val rowIndex = rows.indexOfFirst { it.id == id }
+                if (rowIndex >= 0) {
+                    found = base + 1 + rowIndex
+                    break
+                }
+                base += 1 + rows.size
+            }
+            found
+        }
+        if (targetIndex >= 0) {
+            listState.animateScrollToItem(targetIndex)
+            highlightedCaseId = id
+            delay(1800)
+            highlightedCaseId = null
+            onFocusConsumed(id)
+        }
+    }
 
     Column(modifier.fillMaxSize()) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
@@ -481,6 +543,26 @@ private fun SchedulePaneV29(
             Text("진행상황 기준", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(5.dp))
             StatusFiltersV36(statusFilter, statusCounts, onStatusFilter)
+            Spacer(Modifier.height(10.dp))
+            Text("표시 방식", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(5.dp))
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                FilterChip(
+                    selected = viewMode == SCHEDULE_VIEW_DATE_V36,
+                    onClick = { onViewMode(SCHEDULE_VIEW_DATE_V36) },
+                    label = { Text("날짜별") },
+                    modifier = Modifier.testTag("schedule-view-date")
+                )
+                FilterChip(
+                    selected = viewMode == SCHEDULE_VIEW_NUMBER_V36,
+                    onClick = { onViewMode(SCHEDULE_VIEW_NUMBER_V36) },
+                    label = { Text("조사번호") },
+                    modifier = Modifier.testTag("schedule-view-number")
+                )
+            }
             Spacer(Modifier.height(10.dp))
             OutlinedTextField(
                 value = query,
@@ -495,17 +577,21 @@ private fun SchedulePaneV29(
                 statusFilter != FILTER_ALL_V29
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) {
-                    TextButton(onClick = { sortMenu = true }, modifier = Modifier.testTag("schedule-sort")) {
-                        Text("정렬: ${sort.compactLabel}")
-                    }
-                    DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
-                        ScheduleSort.entries.forEach { option ->
-                            DropdownMenuItem(
-                                text = { Text((if (option == sort) "✓ " else "") + option.label) },
-                                onClick = { onSort(option); sortMenu = false },
-                                modifier = Modifier.testTag("schedule-sort-${option.name}")
-                            )
+                    if (viewMode == SCHEDULE_VIEW_DATE_V36) {
+                        TextButton(onClick = { sortMenu = true }, modifier = Modifier.testTag("schedule-sort")) {
+                            Text("정렬: ${sort.compactLabel}")
                         }
+                        DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+                            ScheduleSort.entries.forEach { option ->
+                                DropdownMenuItem(
+                                    text = { Text((if (option == sort) "✓ " else "") + option.label) },
+                                    onClick = { onSort(option); sortMenu = false },
+                                    modifier = Modifier.testTag("schedule-sort-${option.name}")
+                                )
+                            }
+                        }
+                    } else {
+                        Text("조사번호 오름차순", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 12.dp))
                     }
                 }
                 TextButton(
@@ -520,29 +606,30 @@ private fun SchedulePaneV29(
                     Text("필터 초기화")
                 }
             }
-            Text("같은 예정일 안에서 정렬 · 지도는 진행중만 표시", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                if (viewMode == SCHEDULE_VIEW_DATE_V36) "날짜별 묶음 · 같은 예정일 안에서 정렬 · 지도는 진행중만 표시"
+                else "날짜 구분 없이 조사번호 순으로 표시 · 지도는 진행중만 표시",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
         HorizontalDivider()
 
-        if (grouped.isEmpty()) {
+        if (items.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("표시할 일정이 없습니다.") }
         } else {
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize().testTag("schedule-list"),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                grouped.forEach { (date, rows) ->
-                    item(key = "head-$date") {
-                        DateHeaderV29(
-                            date = date,
-                            count = rows.size
-                        )
-                    }
-                    items(rows, key = { it.id }) { c ->
+                if (viewMode == SCHEDULE_VIEW_NUMBER_V36) {
+                    items(numberRows, key = { it.id }) { c ->
                         CaseCardV29(
                             c = c,
                             today = today,
+                            highlighted = highlightedCaseId == c.id,
                             menuExpanded = menuCaseId == c.id,
                             onMenu = { menuCaseId = c.id },
                             onDismissMenu = { menuCaseId = null },
@@ -557,6 +644,35 @@ private fun SchedulePaneV29(
                             onNavigate = { onNavigate(c) },
                             onCall = { onCall(c) }
                         )
+                    }
+                } else {
+                    grouped.forEach { (date, rows) ->
+                        item(key = "head-$date") {
+                            DateHeaderV29(
+                                date = date,
+                                count = rows.size
+                            )
+                        }
+                        items(rows, key = { it.id }) { c ->
+                            CaseCardV29(
+                                c = c,
+                                today = today,
+                                highlighted = highlightedCaseId == c.id,
+                                menuExpanded = menuCaseId == c.id,
+                                onMenu = { menuCaseId = c.id },
+                                onDismissMenu = { menuCaseId = null },
+                                onOpen = { onEdit(c) },
+                                onLocate = { menuCaseId = null; onLocate(c) },
+                                onForm = { menuCaseId = null; onForm(c) },
+                                onEdit = { menuCaseId = null; onEdit(c) },
+                                onStatus = { menuCaseId = null; statusCase = c },
+                                onCancel = { menuCaseId = null; onStatus(c, STATUS_CANCELLED_V29) },
+                                onSchedule = { menuCaseId = null; scheduleCase = c },
+                                onStatusChip = { statusCase = c },
+                                onNavigate = { onNavigate(c) },
+                                onCall = { onCall(c) }
+                            )
+                        }
                     }
                 }
                 item { Spacer(Modifier.height(88.dp)) }
@@ -652,6 +768,7 @@ private fun DateHeaderV29(date: String, count: Int) {
 private fun CaseCardV29(
     c: InvestigationCase,
     today: LocalDate,
+    highlighted: Boolean = false,
     menuExpanded: Boolean,
     onMenu: () -> Unit,
     onDismissMenu: () -> Unit,
@@ -672,7 +789,13 @@ private fun CaseCardV29(
     val hasPhone = phoneTargetsV29(c).isNotEmpty()
     val warnings = caseWarningsV29(c, today)
 
-    ElevatedCard(Modifier.fillMaxWidth().testTag("schedule-case-${c.id}").clickable(onClick = onOpen), shape = RoundedCornerShape(18.dp)) {
+    ElevatedCard(
+        Modifier.fillMaxWidth().testTag("schedule-case-${c.id}").clickable(onClick = onOpen),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = if (highlighted) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surface
+        )
+    ) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -1378,6 +1501,8 @@ private const val STATUS_IN_PROGRESS_V29 = "진행중"
 private const val STATUS_CANCELLED_V29 = "의뢰취소"
 private const val STATUS_DONE_V29 = "완료"
 private val STATUS_VALUES_V29 = listOf(STATUS_NEW_V29, STATUS_IN_PROGRESS_V29, STATUS_CANCELLED_V29, STATUS_DONE_V29)
+private const val SCHEDULE_VIEW_DATE_V36 = "날짜별"
+private const val SCHEDULE_VIEW_NUMBER_V36 = "조사번호"
 private const val FILTER_PERIOD_V29 = "조회기간"
 private const val FILTER_ALL_V29 = "전체보기"
 private const val FILTER_TODAY_V29 = "오늘"
