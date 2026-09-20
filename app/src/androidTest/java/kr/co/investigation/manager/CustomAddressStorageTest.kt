@@ -26,10 +26,13 @@ class CustomAddressStorageTest {
         // Recreate the immediately preceding schema, including a real existing row.
         SQLiteDatabase.openDatabase(context.getDatabasePath(name).path, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
             db.execSQL("ALTER TABLE cases DROP COLUMN customMapAddress")
+            db.execSQL("ALTER TABLE attachments DROP COLUMN deletedAt")
             db.execSQL("DELETE FROM room_master_table")
             db.version = 6
         }
-        val after = Room.databaseBuilder(context, AppDb::class.java, name).addMigrations(AppDb.MIGRATION_6_7).build()
+        val after = Room.databaseBuilder(context, AppDb::class.java, name)
+            .addMigrations(AppDb.MIGRATION_6_7, AppDb.MIGRATION_7_8)
+            .build()
         try {
             val migrated = after.cases().get(id)!!
             assertEquals("migration-fixture", migrated.managementNo)
