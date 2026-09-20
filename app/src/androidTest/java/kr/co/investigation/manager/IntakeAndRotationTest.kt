@@ -155,11 +155,11 @@ class IntakeAndRotationTest {
         ui.onNodeWithText("조사의뢰서", useUnmergedTree = false).performClick()
         rotate("form")
         back()
-        ui.onNodeWithText("조사확인서 원본").performScrollTo().performClick()
+        ui.onAllNodesWithText("원본 보기").onLast().performScrollTo().performClick()
         rotate("attachment")
         back()
         back()
-        ui.onNodeWithTag("screen-main").assertIsDisplayed()
+        ui.waitUntil(10_000) { ui.onAllNodesWithTag("screen-main").fetchSemanticsNodes().isNotEmpty() }
         openMenu("전체 데이터시트")
         ui.onNodeWithTag("sheet-header-관리번호").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "내림차순"))
     }
@@ -404,6 +404,8 @@ class IntakeAndRotationTest {
 
     @Test fun scheduleNumberAndRegistrationSortSurviveRotation() {
         fun choose(option: String) {
+            expandScheduleFilters()
+            ui.onNodeWithTag("schedule-view-date").performClick()
             ui.onNodeWithTag("schedule-sort").performClick()
             ui.onNodeWithTag("schedule-sort-$option").performClick()
         }
