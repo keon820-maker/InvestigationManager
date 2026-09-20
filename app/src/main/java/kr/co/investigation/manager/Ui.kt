@@ -4,6 +4,7 @@ package kr.co.investigation.manager
 
 import android.app.Activity
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
@@ -354,7 +355,16 @@ import java.util.Locale
     val saveStatus by vm.detailSaveStatus
     val saving=saveStatus.caseId==c.id&&saveStatus.busy
     val saveMessage=if(saveStatus.caseId==c.id) saveStatus.message else ""
+    var hasUnsavedChanges by remember(c0.id){mutableStateOf(false)}
+    var confirmDiscardChanges by remember{mutableStateOf(false)}
     LaunchedEffect(c0.id, profile) { c = profile.applyTo(c) }
+    LaunchedEffect(saveMessage,saving){
+        if(!saving&&saveMessage=="저장했습니다.") hasUnsavedChanges=false
+    }
+    fun requestBack(){
+        if(hasUnsavedChanges) confirmDiscardChanges=true else onBack()
+    }
+    BackHandler(enabled=hasUnsavedChanges){confirmDiscardChanges=true}
     val atts by vm.db.attachments().observe(c.id).collectAsStateWithLifecycle(emptyList())
     var photoError by remember{mutableStateOf("")}
     var confirmDelete by remember{mutableStateOf(false)}
@@ -385,6 +395,13 @@ import java.util.Locale
                 }
             }
         }, onError = { photoError = it })
+    if(confirmDiscardChanges) AlertDialog(
+        onDismissRequest={confirmDiscardChanges=false},
+        title={Text("저장하지 않은 변경사항")},
+        text={Text("변경 저장을 하지 않은 내용이 있습니다. 저장하지 않고 나가시겠습니까?")},
+        confirmButton={Button(onClick={confirmDiscardChanges=false;hasUnsavedChanges=false;onBack()}){Text("저장하지 않고 나가기")}},
+        dismissButton={TextButton(onClick={confirmDiscardChanges=false}){Text("계속 편집")}}
+    )
     if(showNavigation) NavigationFlowDialogV29(c=c,onDismiss={showNavigation=false})
     if(attachmentAction.isNotBlank()) AlertDialog(
         onDismissRequest={attachmentAction=""},
@@ -448,6 +465,7 @@ import java.util.Locale
         onSelect={selection->
             chooseDefaultAddress=false
             c=profile.applyTo(selection)
+            hasUnsavedChanges=true
             vm.clearDetailSaveFeedback(c.id)
         }
     )
@@ -480,6 +498,7 @@ import java.util.Locale
                                 },
                                 onClick={
                                     c=changeDraftStatusV36(c,status)
+                                    hasUnsavedChanges=true
                                     vm.clearDetailSaveFeedback(c.id)
                                     statusMenu=false
                                 },
@@ -489,7 +508,7 @@ import java.util.Locale
                     }
                 }
             }
-        },navigationIcon={TextButton(onClick=onBack){Text("뒤로")}},actions={
+        },navigationIcon={TextButton(onClick=::requestBack){Text("뒤로")}},actions={
             TextButton(onClick=onForm){Text("조사의뢰서")}
             TextButton(onClick={showNavigation=true},enabled=c.defaultAddress().isNotBlank()){Text("길안내")}
         })},
@@ -517,6 +536,7 @@ import java.util.Locale
         Column(Modifier.padding(pad).consumeWindowInsets(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)){
             PlannedDateFieldV29(c.plannedDate) { date ->
                 c=c.copy(plannedDate=date,routeOrder=if(date==c.plannedDate) c.routeOrder else 0)
+                hasUnsavedChanges=true
                 vm.clearDetailSaveFeedback(c.id)
             }
             OutlinedCard(Modifier.fillMaxWidth().padding(bottom=12.dp)) {
@@ -529,8 +549,16 @@ import java.util.Locale
                     Text("변경 저장을 누르면 주소 변경도 함께 저장됩니다.",style=MaterialTheme.typography.labelSmall)
                 }
             }
-            EditFields(c,fixedInvestigator=true){c=profile.applyTo(it);vm.clearDetailSaveFeedback(c.id)}
-            OutlinedTextField(c.investigationMemo,{c=c.copy(investigationMemo=it);vm.clearDetailSaveFeedback(c.id)},label={Text("조사 비고")},minLines=4,modifier=Modifier.fillMaxWidth())
+            EditFields(c,fixedInvestigator=true){
+                c=profile.applyTo(it)
+                hasUnsavedChanges=true
+                vm.clearDetailSaveFeedback(c.id)
+            }
+            OutlinedTextField(c.investigationMemo,{
+                c=c.copy(investigationMemo=it)
+                hasUnsavedChanges=true
+                vm.clearDetailSaveFeedback(c.id)
+            },label={Text("조사 비고")},minLines=4,modifier=Modifier.fillMaxWidth())
             Column(Modifier.fillMaxWidth().padding(vertical=10.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
                 Button(onClick={attachmentAction="gallery"},modifier=Modifier.fillMaxWidth()){Text("기타 자료 첨부")}
                 OutlinedButton(onClick={attachmentAction="camera"},modifier=Modifier.fillMaxWidth()){Text("카메라 촬영")}
