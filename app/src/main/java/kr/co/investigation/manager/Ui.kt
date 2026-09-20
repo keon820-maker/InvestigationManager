@@ -480,7 +480,11 @@ import java.util.Locale
                     TextButton(
                         onClick={statusMenu=true},
                         contentPadding=PaddingValues(horizontal=0.dp,vertical=0.dp),
-                        colors=ButtonDefaults.textButtonColors(contentColor=statusContentColorV36(c.status)),
+                        colors=ButtonDefaults.textButtonColors(
+                            containerColor=statusContainerColorV36(c.status),
+                            contentColor=statusContentColorV36(c.status)
+                        ),
+                        shape=RoundedCornerShape(50),
                         modifier=Modifier.testTag("detail-top-status")
                     ){
                         Text(
