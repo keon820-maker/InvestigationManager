@@ -65,7 +65,7 @@ fun DataSheetScreenV31(
     val deleteError by vm.sheetDeleteError
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
     var showColumnSettings by rememberSaveable { mutableStateOf(false) }
-    var focusedRowId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var focusedRowId by remember { mutableStateOf<Long?>(null) }
     var zoom by rememberSaveable { mutableFloatStateOf(1f) }
     val today = LocalDate.now()
     val horizontalState = rememberScrollState()
