@@ -7,7 +7,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.calculateZoom
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -530,7 +530,7 @@ private fun DataSheetColumnSettingsDialogV36(
                     .verticalScroll(rememberScrollState())
             ) {
                 Text(
-                    "체크한 열만 표시됩니다. 오른쪽 ↕ 손잡이를 잡고 원하는 위치까지 한 번에 끌어 여러 칸 이동할 수 있습니다.",
+                    "오른쪽 ↕ 손잡이를 길게 눌러 행이 강조되면 선택된 상태입니다. 손가락을 떼지 않고 원하는 위치까지 끌어 여러 칸 이동할 수 있습니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -570,12 +570,12 @@ private fun DataSheetColumnSettingsDialogV36(
                             )
                             Box(
                                 modifier = Modifier
-                                    .width(64.dp)
+                                    .width(if (draggingLabel == label) 92.dp else 64.dp)
                                     .fillMaxHeight()
                                     .heightIn(min = 48.dp)
                                     .testTag("sheet-column-drag-$label")
                                     .pointerInput(label) {
-                                        detectDragGestures(
+                                        detectDragGesturesAfterLongPress(
                                             onDragStart = {
                                                 draggingLabel = label
                                                 dragOffset = 0f
@@ -608,11 +608,26 @@ private fun DataSheetColumnSettingsDialogV36(
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(
-                                    "↕",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
+                                if (draggingLabel == label) {
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                                        shape = RoundedCornerShape(50)
+                                    ) {
+                                        Text(
+                                            "선택됨 ↕",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                        )
+                                    }
+                                } else {
+                                    Text(
+                                        "↕",
+                                        style = MaterialTheme.typography.titleLarge,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
                             }
                         }
                     }
