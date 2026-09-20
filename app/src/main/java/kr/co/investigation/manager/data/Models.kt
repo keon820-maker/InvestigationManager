@@ -68,7 +68,8 @@ data class Attachment(
     val cloudId: String = "",
     val remotePath: String = "",
     val uploadedAt: Long? = null,
-    val lastSyncedAt: Long? = null
+    val lastSyncedAt: Long? = null,
+    val deletedAt: Long? = null
 )
 
 @Dao
@@ -95,11 +96,12 @@ interface CaseDao {
 
 @Dao
 interface AttachmentDao {
-    @Query("SELECT * FROM attachments WHERE caseId=:caseId ORDER BY createdAt") fun observe(caseId:Long):Flow<List<Attachment>>
-    @Query("SELECT * FROM attachments WHERE caseId IN (:caseIds)") suspend fun getForCases(caseIds:List<Long>):List<Attachment>
-    @Query("SELECT * FROM attachments WHERE caseId=:caseId") suspend fun getForCase(caseId:Long):List<Attachment>
-    @Query("SELECT * FROM attachments") suspend fun getAll():List<Attachment>
-    @Query("SELECT * FROM attachments WHERE cloudId=''") suspend fun getMissingCloudId():List<Attachment>
+    @Query("SELECT * FROM attachments WHERE caseId=:caseId AND deletedAt IS NULL ORDER BY createdAt") fun observe(caseId:Long):Flow<List<Attachment>>
+    @Query("SELECT * FROM attachments WHERE caseId IN (:caseIds) AND deletedAt IS NULL") suspend fun getForCases(caseIds:List<Long>):List<Attachment>
+    @Query("SELECT * FROM attachments WHERE caseId=:caseId AND deletedAt IS NULL") suspend fun getForCase(caseId:Long):List<Attachment>
+    @Query("SELECT * FROM attachments WHERE deletedAt IS NULL") suspend fun getAll():List<Attachment>
+    @Query("SELECT * FROM attachments WHERE cloudId='' AND deletedAt IS NULL") suspend fun getMissingCloudId():List<Attachment>
+    @Query("SELECT * FROM attachments WHERE caseId IN (:caseIds) AND deletedAt IS NOT NULL") suspend fun getDeletedForCases(caseIds:List<Long>):List<Attachment>
     @Query("SELECT * FROM attachments WHERE cloudId=:cloudId LIMIT 1") suspend fun getByCloudId(cloudId:String):Attachment?
     @Insert suspend fun insert(value:Attachment):Long
     @Update suspend fun update(value:Attachment)
@@ -109,7 +111,7 @@ interface AttachmentDao {
     @Query("DELETE FROM attachments WHERE caseId=:caseId") suspend fun deleteForCase(caseId:Long)
 }
 
-@Database(entities=[InvestigationCase::class, Attachment::class], version=7, exportSchema=false)
+@Database(entities=[InvestigationCase::class, Attachment::class], version=8, exportSchema=false)
 abstract class AppDb: RoomDatabase() {
     abstract fun cases():CaseDao
     abstract fun attachments():AttachmentDao
@@ -168,9 +170,15 @@ abstract class AppDb: RoomDatabase() {
             }
         }
 
+        val MIGRATION_7_8 = object: androidx.room.migration.Migration(7, 8) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE attachments ADD COLUMN deletedAt INTEGER")
+            }
+        }
+
         fun get(context:android.content.Context):AppDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, AppDb::class.java, "investigation.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                 .build()
                 .also{instance=it}
         }
