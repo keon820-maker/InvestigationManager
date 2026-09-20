@@ -84,7 +84,7 @@ internal fun drawSheetPrintPage(canvas: Canvas, snapshot: SheetPrintSnapshot, pa
     paint.textSize = 13f
     canvas.drawText("조사 데이터시트", 0f, 17f, paint)
     paint.textSize = 8f
-    canvas.drawText("현재 조건 ${snapshot.rows.size}건 · 전체 열 · ${pageNumber}페이지", 0f, 32f, paint)
+    canvas.drawText("현재 조건 ${snapshot.rows.size}건 · 표시 열 ${snapshot.columns.size}개 · ${pageNumber}페이지", 0f, 32f, paint)
     val totalWidth = page.widths.sum()
     wrappedSheetText(snapshot.description, totalWidth, paint).take(2).forEachIndexed { i, text -> canvas.drawText(text, 0f, 44f + 10f*i, paint) }
     var x = 0f
