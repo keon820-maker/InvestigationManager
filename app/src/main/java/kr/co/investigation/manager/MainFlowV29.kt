@@ -336,7 +336,9 @@ private fun MainScreenV29(
     LaunchedEffect(focusCaseId, listItems, cases) {
         val id = focusCaseId ?: return@LaunchedEffect
         val existsInYear = cases.any { it.id == id }
-        if (existsInYear && listItems.none { it.id == id }) {
+        if (!existsInYear) {
+            onFocusConsumed(id)
+        } else if (listItems.none { it.id == id }) {
             query = ""
             dateFilter = FILTER_ALL_V29
             statusFilter = FILTER_ALL_V29
