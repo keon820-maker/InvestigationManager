@@ -33,6 +33,19 @@ class DataSheetColumnSettingsTest {
     }
 
     @Test
+    fun movingColumnCanJumpAcrossSeveralPositions() {
+        val many = listOf("A", "B", "C", "D", "E", "F", "G")
+        assertEquals(
+            listOf("A", "F", "B", "C", "D", "E", "G"),
+            moveColumnV36(many, 5, 1)
+        )
+        assertEquals(
+            listOf("B", "C", "D", "E", "A", "F", "G"),
+            moveColumnV36(many, 0, 4)
+        )
+    }
+
+    @Test
     fun atLeastOneVisibleColumnIsPreservedWhenLoadingPreferences() {
         val hidden = parseHiddenColumnsV36(labels.joinToString("|"), labels)
         assertFalse(labels.all { it in hidden })
