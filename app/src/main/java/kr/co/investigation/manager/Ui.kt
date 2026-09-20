@@ -362,6 +362,7 @@ import java.util.Locale
     var attachmentName by remember{mutableStateOf("")}
     var attachmentAction by remember{mutableStateOf("")}
     var attachmentToDelete by remember{mutableStateOf<Attachment?>(null)}
+    var deletingAttachmentId by remember{mutableStateOf<Long?>(null)}
     var attachmentDeleteError by remember{mutableStateOf("")}
     var chooseDefaultAddress by androidx.compose.runtime.saveable.rememberSaveable{mutableStateOf(false)}
     var showInvestigatorProfile by remember{mutableStateOf(!profile.isConfigured)}
@@ -399,13 +400,25 @@ import java.util.Locale
         onDismissRequest={attachmentToDelete=null},
         title={Text("첨부파일 삭제")},
         text={Text("${att.originalName}을(를) 삭제하시겠습니까?\n삭제한 첨부파일은 복구할 수 없습니다.")},
-        confirmButton={Button(onClick={
-            attachmentToDelete=null
-            scope.launch {
-                try { vm.deleteAttachment(att); attachmentDeleteError="" }
-                catch(e:Exception) { attachmentDeleteError=e.message ?: "첨부파일을 삭제하지 못했습니다." }
-            }
-        }){Text("삭제")}},
+        confirmButton={Button(
+            enabled=deletingAttachmentId==null,
+            onClick={
+                attachmentToDelete=null
+                deletingAttachmentId=att.id
+                attachmentDeleteError=""
+                scope.launch {
+                    try {
+                        vm.deleteAttachment(att)
+                        attachmentDeleteError=""
+                    } catch(e:Exception) {
+                        attachmentDeleteError=e.message ?: "첨부파일을 삭제하지 못했습니다."
+                    } finally {
+                        deletingAttachmentId=null
+                    }
+                }
+            },
+            modifier=Modifier.testTag("detail-confirm-delete-attachment")
+        ){Text("삭제")}},
         dismissButton={TextButton(onClick={attachmentToDelete=null}){Text("취소")}}
     ) }
     if(showInvestigatorProfile) InvestigatorProfileDialog(
@@ -487,10 +500,10 @@ import java.util.Locale
             if(photoError.isNotBlank()) Text(photoError,color=MaterialTheme.colorScheme.error)
             if(attachmentDeleteError.isNotBlank()) Text(attachmentDeleteError,color=MaterialTheme.colorScheme.error)
             Text("첨부 원본 ${atts.size}개",style=MaterialTheme.typography.titleMedium)
-            Text("항목을 누르면 저장된 원본을 확대해서 확인할 수 있습니다.",style=MaterialTheme.typography.bodySmall)
+            Text("원본 보기로 확인하고, 삭제 버튼으로 해당 첨부파일만 삭제할 수 있습니다.",style=MaterialTheme.typography.bodySmall)
             atts.forEach{att->
                 OutlinedCard(
-                    modifier=Modifier.fillMaxWidth().padding(vertical=4.dp).clickable{onAttachment(att)}
+                    modifier=Modifier.fillMaxWidth().padding(vertical=4.dp)
                 ){
                     Row(
                         Modifier.fillMaxWidth().padding(10.dp),
@@ -509,8 +522,15 @@ import java.util.Locale
                             Text("${att.originalName}  ${att.width}×${att.height}  ${att.byteSize/1024} KB",style=MaterialTheme.typography.bodySmall)
                             Text("SHA-256 ${att.sha256.take(24)}…",style=MaterialTheme.typography.bodySmall)
                         }
-                        TextButton(onClick={onAttachment(att)}){Text("원본 보기")}
-                        TextButton(onClick={attachmentToDelete=att}){Text("삭제")}
+                        TextButton(
+                            onClick={onAttachment(att)},
+                            enabled=deletingAttachmentId==null
+                        ){Text("원본 보기")}
+                        TextButton(
+                            onClick={attachmentToDelete=att;attachmentDeleteError=""},
+                            enabled=deletingAttachmentId==null,
+                            modifier=Modifier.testTag("detail-delete-attachment-${att.id}")
+                        ){Text(if(deletingAttachmentId==att.id) "삭제 중…" else "삭제")}
                     }
                 }
             }
