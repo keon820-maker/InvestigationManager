@@ -127,7 +127,12 @@ fun InvestigationAppV29(vm: AppViewModel) {
         "main" -> MainScreenV29(
             vm = vm,
             onNew = { vm.ocrDraft.reset(); screenStates.removeState("ocr"); screen = "ocr" },
-            onEdit = { selectCase(it); detailReturn = "main"; screen = "detail" },
+            onEdit = {
+                returnFocusCaseId = it.id
+                selectCase(it)
+                detailReturn = "main"
+                screen = "detail"
+            },
             onForm = { selectCase(it); formReturn = "main"; screen = "form" },
             onSettings = { screen = "settings" },
             onPatchHistory = { screen = "patches" },
@@ -253,12 +258,7 @@ private fun MainScreenV29(
     val today = todayDate.toString()
 
     LaunchedEffect(focusCaseId) {
-        if (focusCaseId != null) {
-            query = ""
-            dateFilter = FILTER_ALL_V29
-            statusFilter = FILTER_ALL_V29
-            mobileTab = 0
-        }
+        if (focusCaseId != null) mobileTab = 0
     }
 
     if (showPeriodPicker) {
@@ -332,6 +332,17 @@ private fun MainScreenV29(
         dateFiltered.filter { c -> scheduleMatchesStatusV36(c, statusFilter, todayDate) }
     }
     val listItems = statusFiltered
+
+    LaunchedEffect(focusCaseId, listItems, cases) {
+        val id = focusCaseId ?: return@LaunchedEffect
+        val existsInYear = cases.any { it.id == id }
+        if (existsInYear && listItems.none { it.id == id }) {
+            query = ""
+            dateFilter = FILTER_ALL_V29
+            statusFilter = FILTER_ALL_V29
+        }
+    }
+
     val mapItems = remember(statusFiltered) {
         statusFiltered.filter { it.status.normalizedStatusV29() == STATUS_IN_PROGRESS_V29 }
     }
