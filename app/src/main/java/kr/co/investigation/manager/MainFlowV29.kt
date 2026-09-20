@@ -430,7 +430,7 @@ private fun MainScreenV29(
                     onNavigate = { navCase = it },
                     onCall = { callCase = it },
                     onStatus = { c, status -> vm.changeStatus(c, status) },
-                    onSchedule = { c, date -> vm.update(c.copy(plannedDate = date, routeOrder = 0)) },
+                    onSchedule = { c, date -> vm.changePlannedDate(c, date) },
                     modifier = modifier
                 )
             }
