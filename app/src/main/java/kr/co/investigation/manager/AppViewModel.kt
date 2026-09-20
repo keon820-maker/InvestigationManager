@@ -298,18 +298,28 @@ class AppViewModel(
     suspend fun deleteAttachment(value: Attachment) {
         val current = db.attachments().getForCase(value.caseId).firstOrNull { it.id == value.id } ?: return
         val parent = db.cases().get(current.caseId)
-        if (current.remotePath.isNotBlank() || current.uploadedAt != null) {
-            val user = firebaseAuth?.currentUser ?: error("동기화된 첨부파일은 Google 로그인 후 삭제할 수 있습니다.")
-            val caseCloudId = parent?.cloudId.orEmpty()
-            check(caseCloudId.isNotBlank()) { "조사건 동기화 정보를 찾을 수 없습니다." }
-            syncRepository?.deleteAttachment(user.uid, caseCloudId, current)
-                ?: error("첨부파일 동기화 삭제를 사용할 수 없습니다.")
+        val wasSynced = current.remotePath.isNotBlank() || current.uploadedAt != null
+
+        if (wasSynced) {
+            db.attachments().update(
+                current.copy(
+                    deletedAt = System.currentTimeMillis(),
+                    lastSyncedAt = null
+                )
+            )
+        } else {
+            db.attachments().delete(current)
         }
-        db.attachments().delete(current)
+
         runCatching { File(current.localPath).delete() }
         parent?.let {
-            db.cases().update(it.copy(updatedAt = System.currentTimeMillis(),
-                modifiedByDevice = syncIdentity.deviceId, lastSyncedAt = null))
+            db.cases().update(
+                it.copy(
+                    updatedAt = maxOf(System.currentTimeMillis(), it.updatedAt + 1),
+                    modifiedByDevice = syncIdentity.deviceId,
+                    lastSyncedAt = null
+                )
+            )
         }
         scheduleSync()
     }
