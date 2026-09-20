@@ -358,17 +358,40 @@ import java.util.Locale
     val saveMessage=if(saveStatus.caseId==c.id) saveStatus.message else ""
     var hasUnsavedChanges by remember(c0.id){mutableStateOf(false)}
     var confirmDiscardChanges by remember{mutableStateOf(false)}
+    var saveRequested by remember(c0.id){mutableStateOf(false)}
+    var pendingBackAfterSave by remember(c0.id){mutableStateOf(false)}
     LaunchedEffect(c0.id, profile) { c = profile.applyTo(c) }
-    LaunchedEffect(saveMessage,saving){
-        if(!saving&&saveMessage=="저장했습니다.") hasUnsavedChanges=false
+    LaunchedEffect(saveStatus.caseId,saveStatus.busy,saveStatus.message,saveStatus.failed){
+        if(saveStatus.caseId==c.id){
+            when{
+                saveStatus.busy -> saveRequested=true
+                saveStatus.failed -> {
+                    saveRequested=false
+                    pendingBackAfterSave=false
+                    hasUnsavedChanges=true
+                }
+                saveStatus.message=="저장했습니다." -> {
+                    saveRequested=false
+                    hasUnsavedChanges=false
+                    if(pendingBackAfterSave){
+                        pendingBackAfterSave=false
+                        onBack()
+                    }
+                }
+            }
+        }
     }
-    val hasConfirmedSavedState = !saving && saveMessage == "저장했습니다."
+    val saveBlocking=saving||saveRequested
     fun requestBack(){
-        if(saving) return
-        if(hasUnsavedChanges && !hasConfirmedSavedState) confirmDiscardChanges=true else onBack()
+        if(saveBlocking){
+            pendingBackAfterSave=true
+            return
+        }
+        if(hasUnsavedChanges) confirmDiscardChanges=true else onBack()
     }
-    BackHandler(enabled=saving || (hasUnsavedChanges && !hasConfirmedSavedState)){
-        if(!saving) confirmDiscardChanges=true
+    BackHandler(enabled=saveBlocking||hasUnsavedChanges){
+        if(saveBlocking) pendingBackAfterSave=true
+        else confirmDiscardChanges=true
     }
     val atts by vm.db.attachments().observe(c.id).collectAsStateWithLifecycle(emptyList())
     var photoError by remember{mutableStateOf("")}
@@ -537,8 +560,12 @@ import java.util.Locale
                         modifier=Modifier.testTag("detail-save-status")
                     )
                     Button(
-                        enabled=!saving,
-                        onClick={c=profile.applyTo(c);vm.saveDetail(c)},
+                        enabled=!saveBlocking,
+                        onClick={
+                            c=profile.applyTo(c)
+                            saveRequested=true
+                            vm.saveDetail(c)
+                        },
                         modifier=Modifier.fillMaxWidth().testTag("detail-save")
                     ){Text(if(saving) "저장 중…" else "변경 저장")}
                 }
