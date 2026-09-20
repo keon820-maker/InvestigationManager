@@ -42,19 +42,25 @@ fun AttachmentViewerScreen(att: Attachment, onBack: () -> Unit) {
     var scale by remember(att.id) { mutableFloatStateOf(1f) }
     var offset by remember(att.id) { mutableStateOf(Offset.Zero) }
     var openError by remember(att.id) { mutableStateOf("") }
-    val preview by produceState(initialValue = PreviewResult(), att.localPath) {
-        val loaded = try {
-            PreviewResult(bitmap = loadUprightPreview(
-                att.localPath, att.type == "ORIGINAL_REQUEST" || att.type == "CONFIRMATION"
-            ))
+    var preview by remember(att.localPath) { mutableStateOf(PreviewResult()) }
+    LaunchedEffect(att.localPath) {
+        preview = try {
+            PreviewResult(
+                bitmap = loadUprightPreview(
+                    att.localPath,
+                    att.type == "ORIGINAL_REQUEST" || att.type == "CONFIRMATION"
+                )
+            )
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
             PreviewResult(error = error.message ?: "원본 미리보기를 열 수 없습니다.")
         }
-        value = loaded
-        awaitDispose {
-            loaded.bitmap?.let { bitmap -> if (!bitmap.isRecycled) bitmap.recycle() }
+    }
+    DisposableEffect(preview.bitmap) {
+        val bitmap = preview.bitmap
+        onDispose {
+            bitmap?.let { if (!it.isRecycled) it.recycle() }
         }
     }
 
