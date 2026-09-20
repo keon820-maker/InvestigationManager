@@ -484,6 +484,7 @@ private fun SchedulePaneV29(
     var scheduleCase by remember { mutableStateOf<InvestigationCase?>(null) }
     var statusCase by remember { mutableStateOf<InvestigationCase?>(null) }
     var sortMenu by remember { mutableStateOf(false) }
+    var filtersExpanded by rememberSaveable { mutableStateOf(false) }
     val today = LocalDate.now()
 
     scheduleCase?.let { c ->
@@ -535,83 +536,113 @@ private fun SchedulePaneV29(
     }
 
     Column(modifier.fillMaxSize()) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-            Text("날짜 기준", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(5.dp))
-            DateFiltersV36(dateFilter, periodLabel, onDateFilter, onPeriod)
-            Spacer(Modifier.height(9.dp))
-            Text("진행상황 기준", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(5.dp))
-            StatusFiltersV36(statusFilter, statusCounts, onStatusFilter)
-            Spacer(Modifier.height(10.dp))
-            Text("표시 방식", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(5.dp))
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(7.dp)
-            ) {
-                FilterChip(
-                    selected = viewMode == SCHEDULE_VIEW_DATE_V36,
-                    onClick = { onViewMode(SCHEDULE_VIEW_DATE_V36) },
-                    label = { Text("날짜별") },
-                    modifier = Modifier.testTag("schedule-view-date")
-                )
-                FilterChip(
-                    selected = viewMode == SCHEDULE_VIEW_NUMBER_V36,
-                    onClick = { onViewMode(SCHEDULE_VIEW_NUMBER_V36) },
-                    label = { Text("조사번호") },
-                    modifier = Modifier.testTag("schedule-view-number")
-                )
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+            val dateSummary = when (dateFilter) {
+                FILTER_ALL_V29 -> "전체"
+                FILTER_PERIOD_V29 -> periodLabel
+                else -> dateFilter
             }
-            Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
-                value = query,
-                onValueChange = onQuery,
-                placeholder = { Text("관리번호, 채무자, 주소, 예정일 검색") },
-                singleLine = true,
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.fillMaxWidth()
-            )
-            val hasActiveFilters = query.isNotBlank() ||
-                dateFilter != FILTER_ALL_V29 ||
-                statusFilter != FILTER_ALL_V29
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1f)) {
-                    if (viewMode == SCHEDULE_VIEW_DATE_V36) {
-                        TextButton(onClick = { sortMenu = true }, modifier = Modifier.testTag("schedule-sort")) {
-                            Text("정렬: ${sort.compactLabel}")
-                        }
-                        DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
-                            ScheduleSort.entries.forEach { option ->
-                                DropdownMenuItem(
-                                    text = { Text((if (option == sort) "✓ " else "") + option.label) },
-                                    onClick = { onSort(option); sortMenu = false },
-                                    modifier = Modifier.testTag("schedule-sort-${option.name}")
-                                )
+            val statusSummary = if (statusFilter == FILTER_ALL_V29) "전체" else statusFilter
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "필터",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    "${dateSummary} · ${statusSummary} · ${viewMode}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(
+                    onClick = { filtersExpanded = !filtersExpanded },
+                    modifier = Modifier.testTag("schedule-filter-toggle"),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                ) {
+                    Text(if (filtersExpanded) "▲" else "▼", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+
+            if (filtersExpanded) {
+                Spacer(Modifier.height(6.dp))
+                Text("날짜 기준", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(5.dp))
+                DateFiltersV36(dateFilter, periodLabel, onDateFilter, onPeriod)
+                Spacer(Modifier.height(9.dp))
+                Text("진행상황 기준", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(5.dp))
+                StatusFiltersV36(statusFilter, statusCounts, onStatusFilter)
+                Spacer(Modifier.height(10.dp))
+                Text("표시 방식", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(5.dp))
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    FilterChip(
+                        selected = viewMode == SCHEDULE_VIEW_DATE_V36,
+                        onClick = { onViewMode(SCHEDULE_VIEW_DATE_V36) },
+                        label = { Text("날짜별") },
+                        modifier = Modifier.testTag("schedule-view-date")
+                    )
+                    FilterChip(
+                        selected = viewMode == SCHEDULE_VIEW_NUMBER_V36,
+                        onClick = { onViewMode(SCHEDULE_VIEW_NUMBER_V36) },
+                        label = { Text("조사번호") },
+                        modifier = Modifier.testTag("schedule-view-number")
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = onQuery,
+                    placeholder = { Text("관리번호, 채무자, 주소, 예정일 검색") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                val hasActiveFilters = query.isNotBlank() ||
+                    dateFilter != FILTER_ALL_V29 ||
+                    statusFilter != FILTER_ALL_V29
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) {
+                        if (viewMode == SCHEDULE_VIEW_DATE_V36) {
+                            TextButton(onClick = { sortMenu = true }, modifier = Modifier.testTag("schedule-sort")) {
+                                Text("정렬: ${sort.compactLabel}")
                             }
+                            DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+                                ScheduleSort.entries.forEach { option ->
+                                    DropdownMenuItem(
+                                        text = { Text((if (option == sort) "✓ " else "") + option.label) },
+                                        onClick = { onSort(option); sortMenu = false },
+                                        modifier = Modifier.testTag("schedule-sort-${option.name}")
+                                    )
+                                }
+                            }
+                        } else {
+                            Text("조사번호 오름차순", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 12.dp))
                         }
-                    } else {
-                        Text("조사번호 오름차순", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 12.dp))
+                    }
+                    TextButton(
+                        onClick = {
+                            onQuery("")
+                            onDateFilter(FILTER_ALL_V29)
+                            onStatusFilter(FILTER_ALL_V29)
+                        },
+                        enabled = hasActiveFilters,
+                        modifier = Modifier.testTag("schedule-filter-reset")
+                    ) {
+                        Text("필터 초기화")
                     }
                 }
-                TextButton(
-                    onClick = {
-                        onQuery("")
-                        onDateFilter(FILTER_ALL_V29)
-                        onStatusFilter(FILTER_ALL_V29)
-                    },
-                    enabled = hasActiveFilters,
-                    modifier = Modifier.testTag("schedule-filter-reset")
-                ) {
-                    Text("필터 초기화")
-                }
             }
-            Text(
-                if (viewMode == SCHEDULE_VIEW_DATE_V36) "날짜별 묶음 · 같은 예정일 안에서 정렬 · 지도는 진행중만 표시"
-                else "날짜 구분 없이 조사번호 순으로 표시 · 지도는 진행중만 표시",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
         HorizontalDivider()
 
@@ -793,7 +824,11 @@ private fun CaseCardV29(
         Modifier.fillMaxWidth().testTag("schedule-case-${c.id}").clickable(onClick = onOpen),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.elevatedCardColors(
-            containerColor = if (highlighted) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surface
+            containerColor = if (highlighted) {
+                MaterialTheme.colorScheme.tertiaryContainer
+            } else {
+                statusContainerColorV36(status).copy(alpha = .42f)
+            }
         )
     ) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
@@ -802,7 +837,14 @@ private fun CaseCardV29(
                     Text(c.managementNo.ifBlank { "관리번호 없음" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (c.debtorName.isNotBlank()) Text(c.debtorName, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                AssistChip(onClick = onStatusChip, label = { Text(status) })
+                AssistChip(
+                    onClick = onStatusChip,
+                    label = { Text(status) },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = statusContainerColorV36(status),
+                        labelColor = statusContentColorV36(status)
+                    )
+                )
                 Box {
                     TextButton(onClick = onMenu, contentPadding = PaddingValues(horizontal = 8.dp), modifier = Modifier.testTag("schedule-menu-${c.id}")) { Text("⋮", style = MaterialTheme.typography.titleLarge) }
                     DropdownMenu(expanded = menuExpanded, onDismissRequest = onDismissMenu) {
