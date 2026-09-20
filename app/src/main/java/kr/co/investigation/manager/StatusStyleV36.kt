@@ -52,7 +52,11 @@ internal fun changeDraftStatusV36(
     CASE_STATUS_DONE_V36 -> value.copy(
         status = CASE_STATUS_DONE_V36,
         startedAt = value.startedAt ?: now,
-        completedAt = now
+        completedAt = if (normalizeCaseStatusV36(value.status) == CASE_STATUS_DONE_V36) {
+            value.completedAt ?: now
+        } else {
+            now
+        }
     )
     CASE_STATUS_CANCELLED_V36 -> value.copy(
         status = CASE_STATUS_CANCELLED_V36,
