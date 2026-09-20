@@ -333,11 +333,14 @@ private fun MainScreenV29(
     }
     val listItems = statusFiltered
 
-    LaunchedEffect(focusCaseId, listItems, cases) {
+    LaunchedEffect(focusCaseId, listItems, cases, year) {
         val id = focusCaseId ?: return@LaunchedEffect
-        val existsInYear = cases.any { it.id == id }
-        if (!existsInYear) {
-            onFocusConsumed(id)
+        val existsInVisibleYear = cases.any { it.id == id }
+        if (!existsInVisibleYear) {
+            val stored = vm.db.cases().get(id)
+            if (stored == null || stored.deletedAt != null || stored.year != year) {
+                onFocusConsumed(id)
+            }
         } else if (listItems.none { it.id == id }) {
             query = ""
             dateFilter = FILTER_ALL_V29
