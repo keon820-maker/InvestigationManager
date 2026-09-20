@@ -361,7 +361,7 @@ import java.util.Locale
     var saveRequested by remember(c0.id){mutableStateOf(false)}
     var pendingBackAfterSave by remember(c0.id){mutableStateOf(false)}
     LaunchedEffect(c0.id, profile) { c = profile.applyTo(c) }
-    LaunchedEffect(saveStatus.caseId,saveStatus.busy,saveStatus.message,saveStatus.failed){
+    LaunchedEffect(saveStatus.caseId,saveStatus.busy,saveStatus.message,saveStatus.failed,pendingBackAfterSave){
         if(saveStatus.caseId==c.id){
             when{
                 saveStatus.busy -> saveRequested=true
