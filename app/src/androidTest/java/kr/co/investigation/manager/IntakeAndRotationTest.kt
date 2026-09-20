@@ -366,6 +366,7 @@ class IntakeAndRotationTest {
         rotate("detail")
         ui.onNodeWithTag("detail-save").performClick()
         ui.waitUntil(10_000) { runBlocking { AppDb.get(context).cases().get(smallId)!!.plannedDate == changedDate } }
+        ui.onNodeWithTag("detail-save-status").assertTextEquals("저장했습니다.")
         assertEquals(0,runBlocking { AppDb.get(context).cases().get(smallId)!!.routeOrder })
         back()
         ui.waitUntil(10_000) { ui.onAllNodesWithTag("screen-main").fetchSemanticsNodes().isNotEmpty() }
