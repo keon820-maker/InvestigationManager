@@ -2,6 +2,9 @@ name: Galaxy Tab S11 Emulator
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
   pull_request:
     branches:
       - main
