@@ -762,6 +762,13 @@ internal fun namedAttachmentFile(label:String,storedName:String):String {
             Text("ZIP에는 DB JSON, CSV 목록, 모든 원본 파일, SHA-256 manifest가 포함됩니다. 검증 실패 시 원본을 삭제하지 마십시오.")
             if(msg.isNotBlank()) Text("\n$msg")
             Spacer(Modifier.height(12.dp))
+            HorizontalDivider()
+            Text(
+                "앱 버전 ${BuildConfig.VERSION_NAME} · code ${BuildConfig.VERSION_CODE}",
+                style=MaterialTheme.typography.labelSmall,
+                color=MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(12.dp))
         }
     }
 }
