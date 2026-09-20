@@ -530,12 +530,13 @@ private fun DataSheetColumnSettingsDialogV36(
                     .verticalScroll(rememberScrollState())
             ) {
                 Text(
-                    "체크한 열만 표시됩니다. 오른쪽 ↕ 손잡이를 잡고 바로 위/아래로 끌면 순서가 바뀝니다.",
+                    "체크한 열만 표시됩니다. 오른쪽 ↕ 손잡이를 잡고 원하는 위치까지 한 번에 끌어 여러 칸 이동할 수 있습니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(8.dp))
                 draftOrder.forEachIndexed { index, label ->
+                    key(label) {
                     val visibleCount = draftOrder.count { it !in draftHidden }
                     val checked = label !in draftHidden
                     var dragOffset by remember(label) { mutableFloatStateOf(0f) }
@@ -573,7 +574,7 @@ private fun DataSheetColumnSettingsDialogV36(
                                     .fillMaxHeight()
                                     .heightIn(min = 48.dp)
                                     .testTag("sheet-column-drag-$label")
-                                    .pointerInput(label, draftOrder) {
+                                    .pointerInput(label) {
                                         detectDragGestures(
                                             onDragStart = {
                                                 draggingLabel = label
@@ -591,18 +592,17 @@ private fun DataSheetColumnSettingsDialogV36(
                                             change.consume()
                                             dragOffset += dragAmount.y
                                             val from = draftOrder.indexOf(label)
-                                            val threshold = 26f
-                                            val direction = when {
-                                                dragOffset > threshold -> 1
-                                                dragOffset < -threshold -> -1
-                                                else -> 0
-                                            }
-                                            if (direction != 0 && from >= 0) {
-                                                val to = (from + direction).coerceIn(0, draftOrder.lastIndex)
-                                                if (to != from) {
+                                            val stepPx = 34.dp.toPx()
+                                            val steps = (dragOffset / stepPx).toInt()
+                                            if (steps != 0 && from >= 0) {
+                                                val to = (from + steps).coerceIn(0, draftOrder.lastIndex)
+                                                val moved = to - from
+                                                if (moved != 0) {
                                                     draftOrder = moveColumnV36(draftOrder, from, to)
+                                                    dragOffset -= moved * stepPx
+                                                } else {
+                                                    dragOffset = 0f
                                                 }
-                                                dragOffset = 0f
                                             }
                                         }
                                     },
@@ -615,6 +615,7 @@ private fun DataSheetColumnSettingsDialogV36(
                                 )
                             }
                         }
+                    }
                     }
                 }
             }
