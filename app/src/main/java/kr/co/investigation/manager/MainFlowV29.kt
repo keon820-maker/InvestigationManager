@@ -780,6 +780,33 @@ private fun StatusFiltersV36(
             FILTER_CANCELLED_V29,
             FILTER_DONE_V29
         ).forEach { filter ->
+            val chipColors = when (filter) {
+                FILTER_NEW_V36 -> FilterChipDefaults.filterChipColors(
+                    containerColor = statusContainerColorV36(CASE_STATUS_NEW_V36).copy(alpha = .30f),
+                    labelColor = statusContentColorV36(CASE_STATUS_NEW_V36),
+                    selectedContainerColor = statusContainerColorV36(CASE_STATUS_NEW_V36),
+                    selectedLabelColor = statusContentColorV36(CASE_STATUS_NEW_V36)
+                )
+                FILTER_IN_PROGRESS_V29 -> FilterChipDefaults.filterChipColors(
+                    containerColor = statusContainerColorV36(CASE_STATUS_PROGRESS_V36).copy(alpha = .30f),
+                    labelColor = statusContentColorV36(CASE_STATUS_PROGRESS_V36),
+                    selectedContainerColor = statusContainerColorV36(CASE_STATUS_PROGRESS_V36),
+                    selectedLabelColor = statusContentColorV36(CASE_STATUS_PROGRESS_V36)
+                )
+                FILTER_CANCELLED_V29 -> FilterChipDefaults.filterChipColors(
+                    containerColor = statusContainerColorV36(CASE_STATUS_CANCELLED_V36).copy(alpha = .30f),
+                    labelColor = statusContentColorV36(CASE_STATUS_CANCELLED_V36),
+                    selectedContainerColor = statusContainerColorV36(CASE_STATUS_CANCELLED_V36),
+                    selectedLabelColor = statusContentColorV36(CASE_STATUS_CANCELLED_V36)
+                )
+                FILTER_DONE_V29 -> FilterChipDefaults.filterChipColors(
+                    containerColor = statusContainerColorV36(CASE_STATUS_DONE_V36).copy(alpha = .30f),
+                    labelColor = statusContentColorV36(CASE_STATUS_DONE_V36),
+                    selectedContainerColor = statusContainerColorV36(CASE_STATUS_DONE_V36),
+                    selectedLabelColor = statusContentColorV36(CASE_STATUS_DONE_V36)
+                )
+                else -> FilterChipDefaults.filterChipColors()
+            }
             FilterChip(
                 selected = value == filter,
                 onClick = { onChange(filter) },
@@ -787,6 +814,7 @@ private fun StatusFiltersV36(
                     val label = if (filter == FILTER_ALL_V29) "전체" else filter
                     Text("$label ${counts[filter] ?: 0}")
                 },
+                colors = chipColors,
                 modifier = Modifier.testTag("schedule-status-filter-$filter")
             )
         }
