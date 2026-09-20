@@ -7,6 +7,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -64,6 +65,7 @@ fun DataSheetScreenV31(
     val deleteError by vm.sheetDeleteError
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
     var showColumnSettings by rememberSaveable { mutableStateOf(false) }
+    var focusedRowId by rememberSaveable { mutableStateOf<Long?>(null) }
     var zoom by rememberSaveable { mutableFloatStateOf(1f) }
     val today = LocalDate.now()
     val horizontalState = rememberScrollState()
@@ -144,7 +146,11 @@ fun DataSheetScreenV31(
     }
     val visibleIds = remember(sorted) { sorted.map { it.id }.toSet() }
     val selectedVisible = selectedIds.intersect(visibleIds)
-    LaunchedEffect(visibleIds) { selectedIds = selectedIds.intersect(visibleIds) }
+    val statusCounts = remember(allCases) { dataSheetStatusCountsV36(allCases) }
+    LaunchedEffect(visibleIds) {
+        selectedIds = selectedIds.intersect(visibleIds)
+        if (focusedRowId !in visibleIds) focusedRowId = null
+    }
     fun cancelSelection() {
         if (deleting) return
         selectionMode = false; selectedIds = emptySet(); confirmDelete = false
@@ -268,7 +274,7 @@ fun DataSheetScreenV31(
                         FilterChip(
                             selected = statusFilter == status,
                             onClick = { statusFilter = status },
-                            label = { Text(status) }
+                            label = { Text("$status ${statusCounts[status] ?: 0}") }
                         )
                     }
                     VerticalDivider(Modifier.height(30.dp))
@@ -287,7 +293,8 @@ fun DataSheetScreenV31(
                 }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "열 제목: 정렬 · 열 필터: 값 선택 · 인쇄: 현재 보이는 열/행",
+                        if (selectionMode) "삭제할 행을 선택하세요."
+                        else "행 1회 선택 · 선택된 행을 다시 누르면 편집 · 열 제목: 정렬",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f)
@@ -343,10 +350,24 @@ fun DataSheetScreenV31(
                         if(sorted.isEmpty()) Text("필터 조건에 맞는 데이터가 없습니다.", modifier = Modifier.padding(16.dp))
                         LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
                             itemsIndexed(sorted, key = { _, c -> c.id }) { index, c ->
-                                DataSheetRowV31(index, rowNumbers.getValue(c.id), c, columns, zoom,
-                                    selectionMode, c.id in selectedVisible, !deleting) { row ->
-                                    if(selectionMode) selectedIds = if(row.id in selectedIds) selectedIds - row.id else selectedIds + row.id
-                                    else onOpen(row)
+                                DataSheetRowV31(
+                                    index = index,
+                                    rowNumber = rowNumbers.getValue(c.id),
+                                    c = c,
+                                    columns = columns,
+                                    zoom = zoom,
+                                    selectionMode = selectionMode,
+                                    selected = c.id in selectedVisible,
+                                    focused = c.id == focusedRowId,
+                                    enabled = !deleting
+                                ) { row ->
+                                    if(selectionMode) {
+                                        selectedIds = if(row.id in selectedIds) selectedIds - row.id else selectedIds + row.id
+                                    } else if(focusedRowId == row.id) {
+                                        onOpen(row)
+                                    } else {
+                                        focusedRowId = row.id
+                                    }
                                 }
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .75f))
                             }
@@ -403,11 +424,13 @@ private fun DataSheetRowV31(
     zoom: Float,
     selectionMode: Boolean,
     selected: Boolean,
+    focused: Boolean,
     enabled: Boolean,
     onOpen: (InvestigationCase) -> Unit
 ) {
     val background = when {
         selectionMode && selected -> MaterialTheme.colorScheme.secondaryContainer
+        !selectionMode && focused -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = .72f)
         normalizedStatusV31(c.status) == DATA_DONE_V31 -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .42f)
         index % 2 == 1 -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .20f)
         else -> MaterialTheme.colorScheme.surface
@@ -480,7 +503,7 @@ private fun DataSheetColumnSettingsDialogV36(
                     .verticalScroll(rememberScrollState())
             ) {
                 Text(
-                    "체크한 열만 표시됩니다. 위/아래 버튼으로 열 위치를 바꿀 수 있습니다.",
+                    "체크한 열만 표시됩니다. 오른쪽 ≡ 손잡이를 길게 누른 뒤 위/아래로 드래그해 순서를 바꿀 수 있습니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -488,6 +511,7 @@ private fun DataSheetColumnSettingsDialogV36(
                 draftOrder.forEachIndexed { index, label ->
                     val visibleCount = draftOrder.count { it !in draftHidden }
                     val checked = label !in draftHidden
+                    var dragOffset by remember(label) { mutableFloatStateOf(0f) }
                     Row(
                         Modifier.fillMaxWidth().padding(vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -504,14 +528,34 @@ private fun DataSheetColumnSettingsDialogV36(
                             modifier = Modifier.testTag("sheet-column-visible-$label")
                         )
                         Text(label, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        TextButton(
-                            onClick = { draftOrder = moveColumnV36(draftOrder, index, index - 1) },
-                            enabled = index > 0
-                        ) { Text("위") }
-                        TextButton(
-                            onClick = { draftOrder = moveColumnV36(draftOrder, index, index + 1) },
-                            enabled = index < draftOrder.lastIndex
-                        ) { Text("아래") }
+                        Text(
+                            "≡",
+                            style = MaterialTheme.typography.titleLarge,
+                            modifier = Modifier
+                                .padding(horizontal = 14.dp, vertical = 6.dp)
+                                .testTag("sheet-column-drag-$label")
+                                .pointerInput(label) {
+                                    detectDragGesturesAfterLongPress(
+                                        onDragStart = { dragOffset = 0f },
+                                        onDragEnd = { dragOffset = 0f },
+                                        onDragCancel = { dragOffset = 0f }
+                                    ) { change, dragAmount ->
+                                        change.consume()
+                                        dragOffset += dragAmount.y
+                                        val from = draftOrder.indexOf(label)
+                                        val direction = when {
+                                            dragOffset > 34f -> 1
+                                            dragOffset < -34f -> -1
+                                            else -> 0
+                                        }
+                                        if (direction != 0 && from >= 0) {
+                                            val to = (from + direction).coerceIn(0, draftOrder.lastIndex)
+                                            if (to != from) draftOrder = moveColumnV36(draftOrder, from, to)
+                                            dragOffset = 0f
+                                        }
+                                    }
+                                }
+                        )
                     }
                 }
             }
@@ -557,6 +601,14 @@ private fun dataSheetSearchValuesV31(c: InvestigationCase): List<String> = listO
     c.ownerName, c.ownerPhone, c.ownerAddress, c.customMapAddress, c.investigationType, c.loanType,
     c.branch, c.branchPhone, c.investigator, c.investigatorPhone, c.requester,
     c.requestNotes, c.investigationMemo, c.status
+)
+
+internal fun dataSheetStatusCountsV36(rows: List<InvestigationCase>): Map<String, Int> = mapOf(
+    DATA_ALL_V31 to rows.size,
+    DATA_NEW_V31 to rows.count { normalizedStatusV31(it.status) == DATA_NEW_V31 },
+    DATA_PROGRESS_V31 to rows.count { normalizedStatusV31(it.status) == DATA_PROGRESS_V31 },
+    DATA_CANCELLED_V31 to rows.count { normalizedStatusV31(it.status) == DATA_CANCELLED_V31 },
+    DATA_DONE_V31 to rows.count { normalizedStatusV31(it.status) == DATA_DONE_V31 }
 )
 
 internal fun normalizedStatusV31(value: String): String = when (value.trim()) {
