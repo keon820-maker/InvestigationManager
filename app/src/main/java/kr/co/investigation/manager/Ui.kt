@@ -362,11 +362,12 @@ import java.util.Locale
     LaunchedEffect(saveMessage,saving){
         if(!saving&&saveMessage=="저장했습니다.") hasUnsavedChanges=false
     }
+    val hasConfirmedSavedState = !saving && saveMessage == "저장했습니다."
     fun requestBack(){
         if(saving) return
-        if(hasUnsavedChanges) confirmDiscardChanges=true else onBack()
+        if(hasUnsavedChanges && !hasConfirmedSavedState) confirmDiscardChanges=true else onBack()
     }
-    BackHandler(enabled=saving||hasUnsavedChanges){
+    BackHandler(enabled=saving || (hasUnsavedChanges && !hasConfirmedSavedState)){
         if(!saving) confirmDiscardChanges=true
     }
     val atts by vm.db.attachments().observe(c.id).collectAsStateWithLifecycle(emptyList())
