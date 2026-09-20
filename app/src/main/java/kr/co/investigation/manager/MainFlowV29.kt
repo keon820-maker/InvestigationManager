@@ -1142,7 +1142,14 @@ private fun CalendarScreenV29(vm: AppViewModel, onBack: () -> Unit, onOpen: (Inv
                                     if (c.debtorName.isNotBlank()) Text(c.debtorName, style = MaterialTheme.typography.bodySmall)
                                     Text("${c.defaultAddressLabel()} · ${c.defaultAddress()}", style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 }
-                                AssistChip(onClick = {}, label = { Text(c.status.normalizedStatusV29()) })
+                                AssistChip(
+                                    onClick = {},
+                                    label = { Text(c.status.normalizedStatusV29()) },
+                                    colors = AssistChipDefaults.assistChipColors(
+                                        containerColor = statusContainerColorV36(c.status),
+                                        labelColor = statusContentColorV36(c.status)
+                                    )
+                                )
                             }
                         }
                     }
