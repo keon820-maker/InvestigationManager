@@ -18,6 +18,20 @@ class StatusStyleV36Test {
     }
 
     @Test
+    fun selectingDoneAgainPreservesOriginalCompletionTime() {
+        val original = InvestigationCase(
+            id = 1,
+            year = 2026,
+            status = "완료",
+            startedAt = 100L,
+            completedAt = 200L
+        )
+        val updated = changeDraftStatusV36(original, "완료", 999L)
+        assertEquals(100L, updated.startedAt)
+        assertEquals(200L, updated.completedAt)
+    }
+
+    @Test
     fun changingDraftStatusUpdatesTimestampsConsistently() {
         val now = 123456L
         val progress = changeDraftStatusV36(row(), "진행중", now)
