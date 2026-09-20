@@ -619,7 +619,7 @@ private fun SchedulePaneV29(
                     placeholder = { Text("관리번호, 채무자, 주소, 예정일 검색") },
                     singleLine = true,
                     shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().testTag("schedule-search")
                 )
                 val hasActiveFilters = query.isNotBlank() ||
                     dateFilter != FILTER_ALL_V29 ||
