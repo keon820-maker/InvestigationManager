@@ -116,6 +116,20 @@ class IntakeAndRotationTest {
         assertTrue("Sorted rows should follow the selected direction", a < b)
     }
 
+    private fun openDataSheetCase(id: Long) {
+        ui.onNodeWithTag("sheet-row-$id").performClick()
+        ui.waitForIdle()
+        ui.onNodeWithTag("sheet-row-$id").performClick()
+        ui.waitUntil(10_000) { ui.onAllNodesWithTag("screen-detail").fetchSemanticsNodes().isNotEmpty() }
+    }
+
+    private fun expandScheduleFilters() {
+        if (ui.onAllNodesWithTag("schedule-search").fetchSemanticsNodes().isEmpty()) {
+            ui.onNodeWithTag("schedule-filter-toggle").performClick()
+            ui.waitForIdle()
+        }
+    }
+
     @Test fun sheetSortFiltersAndNestedScreensSurviveRotation() {
         openMenu("전체 데이터시트")
         ui.waitUntil(10_000) { ui.onAllNodesWithTag("sheet-header-관리번호").fetchSemanticsNodes().isNotEmpty() }
@@ -131,11 +145,13 @@ class IntakeAndRotationTest {
         rotate("datasheet")
         ui.onNodeWithTag("sheet-header-관리번호").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "내림차순"))
         assertRowsBefore(largeId, smallId)
-        ui.onNodeWithTag("sheet-row-$largeId").performClick()
+        openDataSheetCase(largeId)
         ui.onNode(hasSetTextAction() and hasText("관리번호")).performTextReplacement("검사-10-수정")
         closeSoftKeyboard()
         rotate("detail")
         ui.onNode(hasSetTextAction() and hasText("검사-10-수정")).assertExists()
+        ui.onNodeWithTag("detail-save").performClick()
+        ui.waitUntil(10_000) { runBlocking { AppDb.get(context).cases().get(largeId)!!.managementNo == "검사-10-수정" } }
         ui.onNodeWithText("조사의뢰서", useUnmergedTree = false).performClick()
         rotate("form")
         back()
@@ -143,7 +159,8 @@ class IntakeAndRotationTest {
         rotate("attachment")
         back()
         back()
-        ui.onNodeWithTag("screen-datasheet").assertIsDisplayed()
+        ui.onNodeWithTag("screen-main").assertIsDisplayed()
+        openMenu("전체 데이터시트")
         ui.onNodeWithTag("sheet-header-관리번호").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "내림차순"))
     }
 
@@ -269,7 +286,7 @@ class IntakeAndRotationTest {
 
     @Test fun ordinarySaveDoesNotAskForLocationAndAddressChangesUseTheirOwnButton() {
         openMenu("전체 데이터시트")
-        ui.onNodeWithTag("sheet-row-$smallId").performClick()
+        openDataSheetCase(smallId)
         ui.onNode(hasSetTextAction() and hasText("관리번호")).performTextReplacement("검사-저장")
         closeSoftKeyboard()
         ui.onNodeWithTag("detail-save").assertIsDisplayed().performClick()
@@ -307,7 +324,7 @@ class IntakeAndRotationTest {
                 dao.update(dao.get(smallId)!!.copy(propertyAddress="검증시 기존주소 1",propertyLatitude=10.0,propertyLongitude=20.0))
             }
             openMenu("전체 데이터시트")
-            ui.onNodeWithTag("sheet-row-$smallId").performClick()
+            openDataSheetCase(smallId)
             ui.onNode(hasSetTextAction() and hasText("관리번호")).performScrollTo().performClick()
                 .performTextReplacement("검사-휴대폰저장")
             ui.waitUntil(15_000) {
@@ -335,7 +352,7 @@ class IntakeAndRotationTest {
             dao.update(dao.get(smallId)!!.copy(plannedDate=originalDate.toString(),routeOrder=7))
         }
         openMenu("전체 데이터시트")
-        ui.onNodeWithTag("sheet-row-$smallId").performClick()
+        openDataSheetCase(smallId)
         ui.onNodeWithTag("planned-date-open").performScrollTo().performClick()
         ui.onNodeWithTag("planned-date-confirm").assertIsDisplayed()
         // Material DatePicker sets SemanticsProperties.Text to the full localized
@@ -349,7 +366,9 @@ class IntakeAndRotationTest {
         ui.waitUntil(10_000) { runBlocking { AppDb.get(context).cases().get(smallId)!!.plannedDate == changedDate } }
         assertEquals(0,runBlocking { AppDb.get(context).cases().get(smallId)!!.routeOrder })
         back()
-        ui.onNodeWithTag("sheet-row-$smallId").performClick()
+        ui.onNodeWithTag("screen-main").assertIsDisplayed()
+        openMenu("전체 데이터시트")
+        openDataSheetCase(smallId)
         ui.onNodeWithTag("planned-date-open").performScrollTo().performClick()
         ui.onNodeWithTag("planned-date-clear").performClick()
         ui.onNodeWithTag("detail-save").performClick()
@@ -401,7 +420,8 @@ class IntakeAndRotationTest {
             dao.update(dao.get(smallId)!!.copy(createdAt=3000L, plannedDate=today))
             dao.update(dao.get(largeId)!!.copy(createdAt=1000L, plannedDate=today))
         }
-        ui.onNode(hasSetTextAction()).performTextInput("검사")
+        expandScheduleFilters()
+        ui.onNodeWithTag("schedule-search").performTextInput("검사")
         closeSoftKeyboard()
         choose("NUMBER_ASC")
         assertOrder(smallId,largeId)
@@ -424,10 +444,11 @@ class IntakeAndRotationTest {
         }
         assertNull(runBlocking { AppDb.get(context).cases().get(smallId)!!.deletedAt })
 
-        ui.onNodeWithTag("schedule-filter-의뢰취소").performScrollTo().performClick()
+        expandScheduleFilters()
+        ui.onNodeWithTag("schedule-status-filter-의뢰취소").performScrollTo().performClick()
         ui.onNodeWithTag("schedule-case-$smallId").assertExists()
         ui.onNodeWithTag("schedule-case-$largeId").assertDoesNotExist()
-        ui.onNodeWithTag("schedule-filter-전체보기").performScrollTo().performClick()
+        ui.onNodeWithTag("schedule-status-filter-전체보기").performScrollTo().performClick()
         ui.onNodeWithTag("schedule-case-$largeId").assertExists()
     }
 
@@ -439,7 +460,7 @@ class IntakeAndRotationTest {
             dao.update(dao.get(smallId)!!.copy(requestNotes=original))
         }
         openMenu("전체 데이터시트")
-        ui.onNodeWithTag("sheet-row-$smallId").performClick()
+        openDataSheetCase(smallId)
         ui.onNodeWithTag("notes-clean-duplicates").performScrollTo().performClick()
         assertEquals(original,runBlocking { AppDb.get(context).cases().get(smallId)!!.requestNotes })
         ui.runOnUiThread {
@@ -451,8 +472,9 @@ class IntakeAndRotationTest {
 
     @Test fun detailDeletionAndAttachmentDeletionRequireConfirmation() {
         openMenu("전체 데이터시트")
-        ui.onNodeWithTag("sheet-row-$largeId").performClick()
-        ui.onNodeWithText("삭제").performScrollTo().performClick()
+        openDataSheetCase(largeId)
+        val attachmentId = runBlocking { AppDb.get(context).attachments().getForCase(largeId).single().id }
+        ui.onNodeWithTag("detail-delete-attachment-$attachmentId").performScrollTo().performClick()
         ui.onNodeWithText("첨부파일 삭제").assertIsDisplayed()
         ui.onAllNodesWithText("취소").onLast().performClick()
         ui.onNodeWithTag("detail-delete-case").performScrollTo().performClick()
