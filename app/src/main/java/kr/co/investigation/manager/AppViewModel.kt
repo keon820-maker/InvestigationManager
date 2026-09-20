@@ -206,41 +206,15 @@ class AppViewModel(
         }
     }
 
-    fun startInvestigation(c: InvestigationCase) {
+    fun changeStatus(c: InvestigationCase, status: String) {
         viewModelScope.launch {
-            val now = System.currentTimeMillis()
-            val updated = c.copy(
-                status = "진행중",
-                startedAt = c.startedAt ?: now,
-                completedAt = null,
-                updatedAt = now,
-                cloudId = c.cloudId.ifBlank { UUID.randomUUID().toString() },
-                modifiedByDevice = syncIdentity.deviceId,
-                lastSyncedAt = null
-            )
-            db.cases().update(updated)
-            if (_selected.value?.id == c.id) _selected.value = updated
-            scheduleSync()
+            persistEdits(changeDraftStatusV36(c, status))
         }
     }
 
-    fun completeInvestigation(c: InvestigationCase) {
-        viewModelScope.launch {
-            val now = System.currentTimeMillis()
-            val updated = c.copy(
-                status = "완료",
-                startedAt = c.startedAt ?: now,
-                completedAt = now,
-                updatedAt = now,
-                cloudId = c.cloudId.ifBlank { UUID.randomUUID().toString() },
-                modifiedByDevice = syncIdentity.deviceId,
-                lastSyncedAt = null
-            )
-            db.cases().update(updated)
-            if (_selected.value?.id == c.id) _selected.value = updated
-            scheduleSync()
-        }
-    }
+    fun startInvestigation(c: InvestigationCase) = changeStatus(c, CASE_STATUS_PROGRESS_V36)
+
+    fun completeInvestigation(c: InvestigationCase) = changeStatus(c, CASE_STATUS_DONE_V36)
 
     fun saveRouteOrder(ordered: List<InvestigationCase>) {
         if (ordered.isEmpty()) return
