@@ -84,7 +84,19 @@ object ArchiveService {
     }
 
     private fun verifyZip(file:File):Boolean=runCatching {
-        ZipFile(file).use{z-> val e=z.entries(); while(e.hasMoreElements()){ val x=e.nextElement(); if(!x.isDirectory) z.getInputStream(x).use{it.copyTo(OutputStream.nullOutputStream(), COPY_BUFFER_SIZE)} }}; true
+        val buffer = ByteArray(COPY_BUFFER_SIZE)
+        ZipFile(file).use { zip ->
+            val entries = zip.entries()
+            while (entries.hasMoreElements()) {
+                val entry = entries.nextElement()
+                if (!entry.isDirectory) {
+                    zip.getInputStream(entry).use { input ->
+                        while (input.read(buffer) >= 0) { /* read every byte to validate the entry */ }
+                    }
+                }
+            }
+        }
+        true
     }.getOrDefault(false)
 
     private const val COPY_BUFFER_SIZE = 256 * 1024
