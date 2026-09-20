@@ -7,7 +7,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.calculateZoom
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -517,6 +517,7 @@ private fun DataSheetColumnSettingsDialogV36(
 ) {
     var draftOrder by remember(currentOrder) { mutableStateOf(currentOrder) }
     var draftHidden by remember(hidden) { mutableStateOf(hidden) }
+    var draggingLabel by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -529,7 +530,7 @@ private fun DataSheetColumnSettingsDialogV36(
                     .verticalScroll(rememberScrollState())
             ) {
                 Text(
-                    "체크한 열만 표시됩니다. 오른쪽 ≡ 손잡이를 길게 누른 뒤 위/아래로 드래그해 순서를 바꿀 수 있습니다.",
+                    "체크한 열만 표시됩니다. 오른쪽 ↕ 손잡이를 잡고 바로 위/아래로 끌면 순서가 바뀝니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -538,50 +539,82 @@ private fun DataSheetColumnSettingsDialogV36(
                     val visibleCount = draftOrder.count { it !in draftHidden }
                     val checked = label !in draftHidden
                     var dragOffset by remember(label) { mutableFloatStateOf(0f) }
-                    Row(
-                        Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (draggingLabel == label) MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.surface
                     ) {
-                        Checkbox(
-                            checked = checked,
-                            onCheckedChange = { shouldShow ->
-                                draftHidden = when {
-                                    shouldShow -> draftHidden - label
-                                    visibleCount > 1 -> draftHidden + label
-                                    else -> draftHidden
-                                }
-                            },
-                            modifier = Modifier.testTag("sheet-column-visible-$label")
-                        )
-                        Text(label, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(
-                            "≡",
-                            style = MaterialTheme.typography.titleLarge,
-                            modifier = Modifier
-                                .padding(horizontal = 14.dp, vertical = 6.dp)
-                                .testTag("sheet-column-drag-$label")
-                                .pointerInput(label) {
-                                    detectDragGesturesAfterLongPress(
-                                        onDragStart = { dragOffset = 0f },
-                                        onDragEnd = { dragOffset = 0f },
-                                        onDragCancel = { dragOffset = 0f }
-                                    ) { change, dragAmount ->
-                                        change.consume()
-                                        dragOffset += dragAmount.y
-                                        val from = draftOrder.indexOf(label)
-                                        val direction = when {
-                                            dragOffset > 34f -> 1
-                                            dragOffset < -34f -> -1
-                                            else -> 0
-                                        }
-                                        if (direction != 0 && from >= 0) {
-                                            val to = (from + direction).coerceIn(0, draftOrder.lastIndex)
-                                            if (to != from) draftOrder = moveColumnV36(draftOrder, from, to)
-                                            dragOffset = 0f
-                                        }
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = checked,
+                                onCheckedChange = { shouldShow ->
+                                    draftHidden = when {
+                                        shouldShow -> draftHidden - label
+                                        visibleCount > 1 -> draftHidden + label
+                                        else -> draftHidden
                                     }
-                                }
-                        )
+                                },
+                                modifier = Modifier.testTag("sheet-column-visible-$label")
+                            )
+                            Text(
+                                label,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                fontWeight = if (draggingLabel == label) FontWeight.SemiBold else FontWeight.Normal
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .width(64.dp)
+                                    .fillMaxHeight()
+                                    .heightIn(min = 48.dp)
+                                    .testTag("sheet-column-drag-$label")
+                                    .pointerInput(label, draftOrder) {
+                                        detectDragGestures(
+                                            onDragStart = {
+                                                draggingLabel = label
+                                                dragOffset = 0f
+                                            },
+                                            onDragEnd = {
+                                                draggingLabel = null
+                                                dragOffset = 0f
+                                            },
+                                            onDragCancel = {
+                                                draggingLabel = null
+                                                dragOffset = 0f
+                                            }
+                                        ) { change, dragAmount ->
+                                            change.consume()
+                                            dragOffset += dragAmount.y
+                                            val from = draftOrder.indexOf(label)
+                                            val threshold = 26f
+                                            val direction = when {
+                                                dragOffset > threshold -> 1
+                                                dragOffset < -threshold -> -1
+                                                else -> 0
+                                            }
+                                            if (direction != 0 && from >= 0) {
+                                                val to = (from + direction).coerceIn(0, draftOrder.lastIndex)
+                                                if (to != from) {
+                                                    draftOrder = moveColumnV36(draftOrder, from, to)
+                                                }
+                                                dragOffset = 0f
+                                            }
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "↕",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
                     }
                 }
             }
