@@ -219,7 +219,7 @@ fun DataSheetScreenV31(
                     horizontalArrangement = Arrangement.spacedBy(7.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    listOf(DATA_ALL_V31, DATA_NEW_V31, DATA_PROGRESS_V31, DATA_DONE_V31).forEach { status ->
+                    listOf(DATA_ALL_V31, DATA_NEW_V31, DATA_PROGRESS_V31, DATA_CANCELLED_V31, DATA_DONE_V31).forEach { status ->
                         FilterChip(
                             selected = statusFilter == status,
                             onClick = { statusFilter = status },
@@ -416,14 +416,15 @@ private fun dataSheetSearchValuesV31(c: InvestigationCase): List<String> = listO
     c.requestNotes, c.investigationMemo, c.status
 )
 
-private fun normalizedStatusV31(value: String): String = when (value.trim()) {
+internal fun normalizedStatusV31(value: String): String = when (value.trim()) {
     DATA_PROGRESS_V31 -> DATA_PROGRESS_V31
+    DATA_CANCELLED_V31 -> DATA_CANCELLED_V31
     DATA_DONE_V31 -> DATA_DONE_V31
     else -> DATA_NEW_V31
 }
 
-private fun isDelayedV31(c: InvestigationCase, today: LocalDate): Boolean {
-    if (normalizedStatusV31(c.status) == DATA_DONE_V31) return false
+internal fun isDelayedV31(c: InvestigationCase, today: LocalDate): Boolean {
+    if (normalizedStatusV31(c.status) in setOf(DATA_DONE_V31, DATA_CANCELLED_V31)) return false
     val planned = runCatching { LocalDate.parse(c.plannedDate) }.getOrNull()
     val due = runCatching { LocalDate.parse(c.dueDate) }.getOrNull()
     return planned?.isBefore(today) == true || due?.isBefore(today) == true
@@ -436,6 +437,7 @@ private fun formatTimestampV31(value: Long?): String = value?.let {
 private const val DATA_ALL_V31 = "전체"
 private const val DATA_NEW_V31 = "신규"
 private const val DATA_PROGRESS_V31 = "진행중"
+private const val DATA_CANCELLED_V31 = "의뢰취소"
 private const val DATA_DONE_V31 = "완료"
 private const val DATA_SCHEDULE_ALL_V31 = "전체 일정"
 private const val DATA_SCHEDULE_ASSIGNED_V31 = "예정 있음"
