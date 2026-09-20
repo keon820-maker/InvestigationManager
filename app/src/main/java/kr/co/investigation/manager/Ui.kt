@@ -362,9 +362,12 @@ import java.util.Locale
         if(!saving&&saveMessage=="저장했습니다.") hasUnsavedChanges=false
     }
     fun requestBack(){
+        if(saving) return
         if(hasUnsavedChanges) confirmDiscardChanges=true else onBack()
     }
-    BackHandler(enabled=hasUnsavedChanges){confirmDiscardChanges=true}
+    BackHandler(enabled=saving||hasUnsavedChanges){
+        if(!saving) confirmDiscardChanges=true
+    }
     val atts by vm.db.attachments().observe(c.id).collectAsStateWithLifecycle(emptyList())
     var photoError by remember{mutableStateOf("")}
     var confirmDelete by remember{mutableStateOf(false)}
@@ -508,7 +511,7 @@ import java.util.Locale
                     }
                 }
             }
-        },navigationIcon={TextButton(onClick=::requestBack){Text("뒤로")}},actions={
+        },navigationIcon={TextButton(enabled=!saving,onClick=::requestBack){Text("뒤로")}},actions={
             TextButton(onClick=onForm){Text("조사의뢰서")}
             TextButton(onClick={showNavigation=true},enabled=c.defaultAddress().isNotBlank()){Text("길안내")}
         })},
