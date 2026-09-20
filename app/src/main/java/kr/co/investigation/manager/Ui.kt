@@ -522,7 +522,10 @@ import java.util.Locale
             TextButton(onClick={showNavigation=true},enabled=c.defaultAddress().isNotBlank()){Text("길안내")}
         })},
         bottomBar={
-            Surface(tonalElevation=3.dp){
+            Surface(
+                tonalElevation=3.dp,
+                modifier=Modifier.imePadding()
+            ){
                 Column(
                     Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal=16.dp,vertical=8.dp),
                     verticalArrangement=Arrangement.spacedBy(8.dp)
