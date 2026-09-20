@@ -56,7 +56,7 @@ fun NativeMapPaneV29(
 
     val points = remember(items) {
         items.filter {
-            it.status == "진행중" && it.propertyLatitude != null && it.propertyLongitude != null
+            normalizeCaseStatusV36(it.status) == CASE_STATUS_PROGRESS_V36 && it.propertyLatitude != null && it.propertyLongitude != null
         }.sortedWith(
             compareBy<InvestigationCase> { it.plannedDate }
                 .thenBy { it.id }
@@ -154,7 +154,7 @@ fun NativeMapPaneV29(
         }
 
         val selectedPoint = selected?.takeIf {
-            it.status == "진행중" && it.propertyLatitude != null && it.propertyLongitude != null
+            normalizeCaseStatusV36(it.status) == CASE_STATUS_PROGRESS_V36 && it.propertyLatitude != null && it.propertyLongitude != null
         }
         val newViewportKey = buildString {
             append(points.joinToString("|") { "${it.id}:${it.propertyLatitude}:${it.propertyLongitude}" })
