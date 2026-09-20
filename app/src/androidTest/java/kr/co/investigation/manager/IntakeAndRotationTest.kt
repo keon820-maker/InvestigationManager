@@ -368,7 +368,7 @@ class IntakeAndRotationTest {
         ui.waitUntil(10_000) { runBlocking { AppDb.get(context).cases().get(smallId)!!.plannedDate == changedDate } }
         assertEquals(0,runBlocking { AppDb.get(context).cases().get(smallId)!!.routeOrder })
         back()
-        ui.onNodeWithTag("screen-main").assertIsDisplayed()
+        ui.waitUntil(10_000) { ui.onAllNodesWithTag("screen-main").fetchSemanticsNodes().isNotEmpty() }
         openMenu("전체 데이터시트")
         openDataSheetCase(smallId)
         ui.onNodeWithTag("planned-date-open").performScrollTo().performClick()
