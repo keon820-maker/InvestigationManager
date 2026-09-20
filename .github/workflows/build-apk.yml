@@ -123,7 +123,7 @@ jobs:
         run: |
           set -euo pipefail
           : "${KAKAO_NATIVE_APP_KEY:?Missing KAKAO_NATIVE_APP_KEY repository secret}"
-          gradle testDebugUnitTest assembleDebug
+          gradle testDebugUnitTest lintDebug assembleDebug
 
       - name: Build offline OCR validation APKs
         if: github.event_name == 'pull_request'
