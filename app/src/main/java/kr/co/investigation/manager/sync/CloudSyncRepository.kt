@@ -9,6 +9,7 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Source
+import com.google.firebase.firestore.SetOptions
 import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.storage.StorageException
 import com.google.firebase.storage.StorageMetadata
@@ -31,14 +32,24 @@ class CloudSyncRepository(
     private val storage: FirebaseStorage = FirebaseStorage.getInstance()
 ) {
     suspend fun deleteAttachment(uid: String, caseCloudId: String, attachment: Attachment) = withContext(Dispatchers.IO) {
-        if (attachment.remotePath.isNotBlank()) {
+        val remoteDoc = attachmentCollection(uid, caseCloudId).document(attachment.cloudId)
+        val remote = runCatching { remoteDoc.get(Source.SERVER).await().toRemoteAttachment() }.getOrNull()
+        val storagePath = attachment.remotePath.ifBlank { remote?.storagePath.orEmpty() }
+        if (storagePath.isNotBlank()) {
             try {
-                storage.reference.child(attachment.remotePath).delete().await()
+                storage.reference.child(storagePath).delete().await()
             } catch (error: StorageException) {
                 if (error.errorCode != StorageException.ERROR_OBJECT_NOT_FOUND) throw error
             }
         }
-        attachmentCollection(uid, caseCloudId).document(attachment.cloudId).delete().await()
+        remoteDoc.set(
+            mapOf(
+                "schemaVersion" to 2,
+                "deletedAt" to (attachment.deletedAt ?: System.currentTimeMillis()),
+                "serverUpdatedAt" to FieldValue.serverTimestamp()
+            ),
+            SetOptions.merge()
+        ).await()
         cases(uid).document(caseCloudId).update("attachmentsChangedAt", FieldValue.serverTimestamp()).await()
     }
 
@@ -139,10 +150,24 @@ class CloudSyncRepository(
         var downloaded = 0
         val syncedAt = System.currentTimeMillis()
         val activeCases = localDb.cases().getAllActive()
+        val activeCaseIds = activeCases.map { it.id }
+        val deletedAttachments = if (activeCaseIds.isEmpty()) emptyList()
+            else localDb.attachments().getDeletedForCases(activeCaseIds)
+        val casesById = activeCases.associateBy { it.id }
+
+        deletedAttachments.forEach { deleted ->
+            val parent = casesById[deleted.caseId]
+            if (parent != null && deleted.cloudId.isNotBlank()) {
+                deleteAttachment(uid, parent.cloudId, deleted)
+            }
+            localDb.attachments().delete(deleted)
+            runCatching { File(deleted.localPath).delete() }
+        }
+
         val localByCase = if (activeCases.isEmpty()) {
             emptyMap()
         } else {
-            localDb.attachments().getForCases(activeCases.map { it.id }).groupBy { it.caseId }
+            localDb.attachments().getForCases(activeCaseIds).groupBy { it.caseId }
         }
 
         activeCases.forEach { case ->
@@ -155,6 +180,16 @@ class CloudSyncRepository(
             remoteSnapshot.documents.forEach { document ->
                 val remote = document.toRemoteAttachment()
                 val exact = localByCloudId[remote.cloudId]
+                if (remote.deletedAt != null) {
+                    exact?.let { local ->
+                        localDb.attachments().delete(local)
+                        runCatching { File(local.localPath).delete() }
+                        localAttachments.removeAll { it.id == local.id }
+                        localByCloudId.remove(local.cloudId)
+                        localByFingerprint.remove(local.fingerprint())
+                    }
+                    return@forEach
+                }
                 val sameOriginal = exact ?: localByFingerprint[remote.fingerprint()]
                 if (sameOriginal == null) {
                     val downloadedAttachment = downloadAttachment(case, remote, syncedAt)
@@ -354,7 +389,7 @@ private fun InvestigationCase.toCloudMap(): Map<String, Any?> = mapOf(
 )
 
 private fun Attachment.toCloudMap(storagePath: String, uploadedAt: Long): Map<String, Any?> = mapOf(
-    "schemaVersion" to 1,
+    "schemaVersion" to 2,
     "type" to type,
     "originalName" to originalName,
     "mimeType" to mimeType,
@@ -366,6 +401,7 @@ private fun Attachment.toCloudMap(storagePath: String, uploadedAt: Long): Map<St
     "createdAt" to createdAt,
     "uploadedAt" to uploadedAt,
     "storagePath" to storagePath,
+    "deletedAt" to deletedAt,
     "serverUpdatedAt" to FieldValue.serverTimestamp()
 )
 
@@ -426,7 +462,8 @@ private data class RemoteAttachment(
     val sha256: String,
     val createdAt: Long,
     val uploadedAt: Long?,
-    val storagePath: String
+    val storagePath: String,
+    val deletedAt: Long?
 )
 
 private fun DocumentSnapshot.toRemoteAttachment(): RemoteAttachment {
@@ -443,7 +480,8 @@ private fun DocumentSnapshot.toRemoteAttachment(): RemoteAttachment {
         sha256 = data.string("sha256"),
         createdAt = data.long("createdAt", System.currentTimeMillis()),
         uploadedAt = data.nullableLong("uploadedAt"),
-        storagePath = data.string("storagePath")
+        storagePath = data.string("storagePath"),
+        deletedAt = data.nullableLong("deletedAt")
     )
 }
 
