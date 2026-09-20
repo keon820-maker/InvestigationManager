@@ -45,6 +45,9 @@ fun DataSheetScreenV31(
     onPrint: ((SheetPrintSnapshot) -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val columnPrefs = remember(context) {
+        context.getSharedPreferences("data_sheet_columns_v36", android.content.Context.MODE_PRIVATE)
+    }
     val allCases by vm.allCases.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     var statusFilter by rememberSaveable { mutableStateOf(DATA_ALL_V31) }
@@ -59,6 +62,7 @@ fun DataSheetScreenV31(
     val deleting by vm.sheetDeleting
     val deleteError by vm.sheetDeleteError
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
+    var showColumnSettings by rememberSaveable { mutableStateOf(false) }
     var zoom by rememberSaveable { mutableFloatStateOf(1f) }
     val today = LocalDate.now()
     val horizontalState = rememberScrollState()
@@ -83,7 +87,7 @@ fun DataSheetScreenV31(
         }
     }
 
-    val columns = remember {
+    val baseColumns = remember {
         listOf(
             DataColumnV31("번호", 58.dp) { "" },
             DataColumnV31("관리번호", 170.dp) { it.managementNo },
@@ -94,11 +98,12 @@ fun DataSheetScreenV31(
             DataColumnV31("채무자", 120.dp) { it.debtorName },
             DataColumnV31("채무자 연락처", 145.dp) { listOf(it.mobile, it.phone).filter(String::isNotBlank).distinct().joinToString(" / ") },
             DataColumnV31("물건 종류", 110.dp) { it.propertyType },
+            DataColumnV31("선택 주소", 320.dp) { it.defaultAddress() },
+            DataColumnV31("주소 선택", 125.dp) { it.defaultAddressLabel() },
             DataColumnV31("물건 소재지", 310.dp) { it.propertyAddress },
             DataColumnV31("소유자", 115.dp) { it.ownerName },
             DataColumnV31("소유자 연락처", 140.dp) { it.ownerPhone },
             DataColumnV31("소유자 주소", 280.dp) { it.ownerAddress },
-            DataColumnV31("기본 주소지", 145.dp) { it.defaultAddressLabel() },
             DataColumnV31("직접입력 주소", 280.dp) { it.customMapAddress },
             DataColumnV31("조사 종류", 125.dp) { it.investigationType },
             DataColumnV31("대출 종류", 120.dp) { it.loanType },
@@ -110,6 +115,17 @@ fun DataSheetScreenV31(
             DataColumnV31("조사 시작", 145.dp) { formatTimestampV31(it.startedAt) },
             DataColumnV31("조사 완료", 145.dp) { formatTimestampV31(it.completedAt) }
         )
+    }
+    val allColumnLabels = remember(baseColumns) { baseColumns.map { it.label } }
+    var columnOrder by remember {
+        mutableStateOf(normalizeColumnOrderV36(columnPrefs.getString("order", null), allColumnLabels))
+    }
+    var hiddenColumns by remember {
+        mutableStateOf(parseHiddenColumnsV36(columnPrefs.getString("hidden", null), allColumnLabels))
+    }
+    val columns = remember(baseColumns, columnOrder, hiddenColumns) {
+        val byLabel = baseColumns.associateBy { it.label }
+        columnOrder.mapNotNull(byLabel::get).filterNot { it.label in hiddenColumns }
     }
     fun cellValue(c: InvestigationCase, column: DataColumnV31): String =
         if(column.label == "번호") rowNumbers.getValue(c.id).toString() else column.value(c)
@@ -154,6 +170,34 @@ fun DataSheetScreenV31(
             },
             onClear = { columnFilters = columnFilters - column.label; filterColumn = null },
             onDismiss = { filterColumn = null })
+    }
+    if (showColumnSettings) {
+        DataSheetColumnSettingsDialogV36(
+            allLabels = allColumnLabels,
+            currentOrder = columnOrder,
+            hidden = hiddenColumns,
+            onDismiss = { showColumnSettings = false },
+            onApply = { newOrder, newHidden ->
+                columnOrder = newOrder
+                hiddenColumns = newHidden
+                val visibleLabels = newOrder.filterNot { it in newHidden }
+                if (sortColumn !in visibleLabels) sortColumn = visibleLabels.firstOrNull() ?: "번호"
+                columnFilters = columnFilters.filterKeys { it in visibleLabels }
+                columnPrefs.edit()
+                    .putString("order", newOrder.joinToString("|"))
+                    .putString("hidden", newHidden.sorted().joinToString("|"))
+                    .apply()
+                showColumnSettings = false
+            },
+            onReset = {
+                columnOrder = allColumnLabels
+                hiddenColumns = emptySet()
+                columnFilters = emptyMap()
+                if (sortColumn !in allColumnLabels) sortColumn = "번호"
+                columnPrefs.edit().remove("order").remove("hidden").apply()
+                showColumnSettings = false
+            }
+        )
     }
     fun printVisibleRows() {
         val snapshot = SheetPrintSnapshot(
@@ -242,11 +286,15 @@ fun DataSheetScreenV31(
                 }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "열 제목: 정렬 · 열 필터: 값 선택 · 인쇄: 현재 조건의 행",
+                        "열 제목: 정렬 · 열 필터: 값 선택 · 인쇄: 현재 보이는 열/행",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f)
                     )
+                    TextButton(
+                        onClick = { showColumnSettings = true },
+                        modifier = Modifier.testTag("sheet-column-settings")
+                    ) { Text("열 설정") }
                     TextButton(onClick = { changeZoom(zoom - .1f) }, enabled = zoom > DATA_MIN_ZOOM_V31) { Text("−") }
                     TextButton(onClick = { changeZoom(1f) }) { Text("${(zoom * 100).toInt()}%") }
                     TextButton(onClick = { changeZoom(zoom + .1f) }, enabled = zoom < DATA_MAX_ZOOM_V31) { Text("＋") }
@@ -374,9 +422,9 @@ private fun DataSheetRowV31(
     ) {
         if(selectionMode) Checkbox(selected, onCheckedChange = { onOpen(c) }, enabled = enabled,
             modifier = Modifier.width(52.dp).testTag("sheet-select-${c.id}"))
-        columns.forEachIndexed { columnIndex, column ->
+        columns.forEach { column ->
             DataSheetCellV31(
-                text = if (columnIndex == 0) rowNumber.toString() else column.value(c),
+                text = if (column.label == "번호") rowNumber.toString() else column.value(c),
                 width = column.width * zoom,
                 zoom = zoom,
                 header = false
@@ -408,9 +456,103 @@ private fun DataSheetCellV31(text: String, width: Dp, zoom: Float, header: Boole
     VerticalDivider(Modifier.fillMaxHeight(), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .65f))
 }
 
+@Composable
+private fun DataSheetColumnSettingsDialogV36(
+    allLabels: List<String>,
+    currentOrder: List<String>,
+    hidden: Set<String>,
+    onDismiss: () -> Unit,
+    onApply: (List<String>, Set<String>) -> Unit,
+    onReset: () -> Unit
+) {
+    var draftOrder by remember(currentOrder) { mutableStateOf(currentOrder) }
+    var draftHidden by remember(hidden) { mutableStateOf(hidden) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("데이터시트 열 설정") },
+        text = {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text(
+                    "체크한 열만 표시됩니다. 위/아래 버튼으로 열 위치를 바꿀 수 있습니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                draftOrder.forEachIndexed { index, label ->
+                    val visibleCount = draftOrder.count { it !in draftHidden }
+                    val checked = label !in draftHidden
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = checked,
+                            onCheckedChange = { shouldShow ->
+                                draftHidden = when {
+                                    shouldShow -> draftHidden - label
+                                    visibleCount > 1 -> draftHidden + label
+                                    else -> draftHidden
+                                }
+                            },
+                            modifier = Modifier.testTag("sheet-column-visible-$label")
+                        )
+                        Text(label, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        TextButton(
+                            onClick = { draftOrder = moveColumnV36(draftOrder, index, index - 1) },
+                            enabled = index > 0
+                        ) { Text("위") }
+                        TextButton(
+                            onClick = { draftOrder = moveColumnV36(draftOrder, index, index + 1) },
+                            enabled = index < draftOrder.lastIndex
+                        ) { Text("아래") }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onApply(draftOrder, draftHidden) }) { Text("적용") }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onReset) { Text("기본값") }
+                TextButton(onClick = onDismiss) { Text("취소") }
+            }
+        }
+    )
+}
+
+internal fun normalizeColumnOrderV36(saved: String?, labels: List<String>): List<String> {
+    val savedLabels = saved.orEmpty().split("|")
+        .map(String::trim)
+        .filter { it.isNotBlank() && it in labels }
+        .distinct()
+    return savedLabels + labels.filterNot { it in savedLabels }
+}
+
+internal fun parseHiddenColumnsV36(saved: String?, labels: List<String>): Set<String> =
+    saved.orEmpty().split("|")
+        .map(String::trim)
+        .filter { it.isNotBlank() && it in labels }
+        .toSet()
+        .let { hidden -> if (hidden.size >= labels.size) hidden - labels.firstOrNull().orEmpty() else hidden }
+
+internal fun moveColumnV36(order: List<String>, from: Int, to: Int): List<String> {
+    if (from !in order.indices || to !in order.indices || from == to) return order
+    return order.toMutableList().apply {
+        val item = removeAt(from)
+        add(to, item)
+    }
+}
+
 private fun dataSheetSearchValuesV31(c: InvestigationCase): List<String> = listOf(
     c.managementNo, c.requestDate, c.plannedDate, c.dueDate,
-    c.debtorName, c.phone, c.mobile, c.propertyType, c.propertyAddress,
+    c.debtorName, c.phone, c.mobile, c.propertyType, c.defaultAddress(), c.defaultAddressLabel(), c.propertyAddress,
     c.ownerName, c.ownerPhone, c.ownerAddress, c.customMapAddress, c.investigationType, c.loanType,
     c.branch, c.branchPhone, c.investigator, c.investigatorPhone, c.requester,
     c.requestNotes, c.investigationMemo, c.status
