@@ -359,6 +359,7 @@ import java.util.Locale
     var photoError by remember{mutableStateOf("")}
     var confirmDelete by remember{mutableStateOf(false)}
     var showNavigation by remember{mutableStateOf(false)}
+    var statusMenu by remember{mutableStateOf(false)}
     var attachmentName by remember{mutableStateOf("")}
     var attachmentAction by remember{mutableStateOf("")}
     var attachmentToDelete by remember{mutableStateOf<Attachment?>(null)}
@@ -454,11 +455,39 @@ import java.util.Locale
         topBar={TopAppBar(title={
             Column{
                 Text(c.managementNo.ifBlank{"상세정보"})
-                Text(
-                    "진행상황 · ${normalizeCaseStatusV36(c.status)}",
-                    style=MaterialTheme.typography.labelSmall,
-                    color=MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Box{
+                    TextButton(
+                        onClick={statusMenu=true},
+                        contentPadding=PaddingValues(horizontal=0.dp,vertical=0.dp),
+                        colors=ButtonDefaults.textButtonColors(contentColor=statusContentColorV36(c.status)),
+                        modifier=Modifier.testTag("detail-top-status")
+                    ){
+                        Text(
+                            "진행상황 · ${normalizeCaseStatusV36(c.status)} ▼",
+                            style=MaterialTheme.typography.labelMedium,
+                            fontWeight=FontWeight.SemiBold
+                        )
+                    }
+                    DropdownMenu(expanded=statusMenu,onDismissRequest={statusMenu=false}){
+                        CASE_STATUS_VALUES_V36.forEach{status->
+                            DropdownMenuItem(
+                                text={
+                                    Text(
+                                        (if(normalizeCaseStatusV36(c.status)==status)"✓ " else "")+status,
+                                        color=statusContentColorV36(status),
+                                        fontWeight=if(normalizeCaseStatusV36(c.status)==status) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                },
+                                onClick={
+                                    c=changeDraftStatusV36(c,status)
+                                    vm.clearDetailSaveFeedback(c.id)
+                                    statusMenu=false
+                                },
+                                modifier=Modifier.background(statusContainerColorV36(status).copy(alpha=.55f))
+                            )
+                        }
+                    }
+                }
             }
         },navigationIcon={TextButton(onClick=onBack){Text("뒤로")}},actions={
             TextButton(onClick=onForm){Text("조사의뢰서")}
@@ -486,32 +515,6 @@ import java.util.Locale
         }
     ){pad->
         Column(Modifier.padding(pad).consumeWindowInsets(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)){
-            Text("현재 진행상황", style=MaterialTheme.typography.titleSmall, fontWeight=FontWeight.SemiBold)
-            Spacer(Modifier.height(6.dp))
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement=Arrangement.spacedBy(7.dp)
-            ){
-                CASE_STATUS_VALUES_V36.forEach{status->
-                    val selectedStatus=normalizeCaseStatusV36(c.status)==status
-                    FilterChip(
-                        selected=selectedStatus,
-                        onClick={
-                            c=changeDraftStatusV36(c,status)
-                            vm.clearDetailSaveFeedback(c.id)
-                        },
-                        label={Text(status)},
-                        colors=FilterChipDefaults.filterChipColors(
-                            containerColor=statusContainerColorV36(status).copy(alpha=.30f),
-                            labelColor=statusContentColorV36(status),
-                            selectedContainerColor=statusContainerColorV36(status),
-                            selectedLabelColor=statusContentColorV36(status)
-                        ),
-                        modifier=Modifier.testTag("detail-status-$status")
-                    )
-                }
-            }
-            Spacer(Modifier.height(10.dp))
             PlannedDateFieldV29(c.plannedDate) { date ->
                 c=c.copy(plannedDate=date,routeOrder=if(date==c.plannedDate) c.routeOrder else 0)
                 vm.clearDetailSaveFeedback(c.id)
