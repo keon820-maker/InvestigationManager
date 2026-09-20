@@ -111,7 +111,7 @@ class AppViewModel(
         geocodeQueue.trySend(c)
     }
 
-    suspend fun create(c:InvestigationCase):Long {
+    suspend fun create(c:InvestigationCase, scheduleAfterCreate:Boolean = true):Long {
         val xy=c.defaultAddress().takeIf { it.isNotBlank() }
             ?.let { GeocoderService.resolve(getApplication(),it) }
         val now = System.currentTimeMillis()
@@ -125,8 +125,17 @@ class AppViewModel(
                 lastSyncedAt = null
             )
         )
-        scheduleSync()
+        if(scheduleAfterCreate) scheduleSync()
         return id
+    }
+
+    suspend fun rollbackNewCase(id: Long) {
+        val attachments = db.attachments().getForCase(id)
+        db.withTransaction {
+            attachments.forEach { db.attachments().delete(it) }
+            db.cases().get(id)?.let { db.cases().delete(it) }
+        }
+        attachments.forEach { runCatching { File(it.localPath).delete() } }
     }
 
     /** Commit edits before any network/geocoder work. Serialize local writes in click order. */
